@@ -46,4 +46,16 @@ public final class Compat {
     public static void loadLibraryNoop(String name) {
         System.out.println("[Compat] skipping System.loadLibrary(" + name + ")");
     }
+
+    /**
+     * Replacement for MemoryUtil.getFieldOffsetObject(Object, Object).
+     *
+     * RoboVM NIO buffers (Android libcore) have no parent/attachment field, so
+     * LWJGL cannot discover the offset it uses to keep sliced buffers alive.
+     * Returning 0 lets the static initializer finish; the buffer slicing paths
+     * that really need the attachment are not used by the MC 1.8.9 hot path.
+     */
+    public static long fieldOffsetObject(Object container, Object value) {
+        return 0L;
+    }
 }

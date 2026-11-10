@@ -63,6 +63,12 @@ public final class Java8Shim {
                     "dev/mcjava/aot/Compat", "loadLibraryNoop",
                     "(Ljava/lang/String;)V"
             },
+            {
+                    "org/lwjgl/system/MemoryUtil", "getFieldOffsetObject",
+                    "(Ljava/lang/Object;Ljava/lang/Object;)J",
+                    "dev/mcjava/aot/Compat", "fieldOffsetObject",
+                    "(Ljava/lang/Object;Ljava/lang/Object;)J"
+            },
     };
 
     public static void main(String[] args) throws Exception {
