@@ -1,0 +1,86 @@
+name: Spike MC AOT
+
+# Feasibility spike for the JIT-free path: AOT-compile the real Minecraft client
+# closure with MobiVM/RoboVM and capture exactly where it breaks.
+on:
+  workflow_dispatch:
+    inputs:
+      mc_version:
+        description: Minecraft version to probe (Java 8 era, e.g. 1.12.2 / 1.8.9)
+        required: false
+        default: '1.12.2'
+      max_time:
+        description: Soft time budget marker only (minutes)
+        required: false
+        default: '60'
+
+jobs:
+  spike:
+    name: MC closure AOT (${{ github.event.inputs.mc_version || '1.12.2' }})
+    runs-on: macos-15
+    timeout-minutes: 120
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Fetch Minecraft jars
+        env:
+          MC_VERSION: ${{ github.event.inputs.mc_version || '1.12.2' }}
+        run: |
+          python3 scripts/fetch_minecraft.py --version "$MC_VERSION" --out work/mc --os osx --arch arm64
+          ls work/mc | head; du -sh work/mc
+
+      - name: Download MobiVM dist
+        run: |
+          mkdir -p work/robovm
+          curl -fSL --retry 3 -o work/robovm-dist.tar.gz \
+            https://repo1.maven.org/maven2/com/mobidevelop/robovm/robovm-dist/2.3.23/robovm-dist-2.3.23.tar.gz
+          tar xzf work/robovm-dist.tar.gz -C work/robovm --strip-components=1
+          ls work/robovm
+          ls work/robovm/lib | head
+
+      - name: Compile spike entry class
+        run: |
+          mkdir -p work/spike-classes
+          javac --release 8 -encoding UTF-8 \
+            -cp work/mc/client.jar \
+            -d work/spike-classes \
+            spikes/mc-aot/src/dev/mcjava/spike/McMain.java
+          ls work/spike-classes/dev/mcjava/spike
+
+      - name: AOT compile MC closure (expected to fail; we mine the errors)
+        run: |
+          set +e
+          CP="work/spike-classes:$(ls work/mc/*.jar work/mc/libs/*.jar 2>/dev/null | tr '\n' ':')"
+          export JAVA_HOME="$JAVA_HOME"
+          work/robovm/bin/robovm \
+            -config spikes/mc-aot/robovm.xml \
+            -cp "$CP" \
+            -o work/mc-aot-spike \
+            -os macosx -arch arm64 -target console \
+            -verbose \
+            dev.mcjava.spike.McMain 2>&1 | tee work/spike.log
+          echo "robovm exit=${PIPESTATUS[0]}"
+
+      - name: Summarise failure classes
+        if: always()
+        run: |
+          echo "=== first 120 error lines ==="
+          grep -nE 'error|Error|Undefined symbols|Unsupported|not found|NoClassDefFound|Caused by' work/spike.log | head -120 || true
+          echo "=== log size: $(wc -l < work/spike.log) lines ==="
+
+      - name: Upload spike log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: spike-mc-aot-log
+          path: |
+            work/spike.log
+            work/mc-aot-spike
+          if-no-files-found: warn
