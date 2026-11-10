@@ -125,3 +125,8 @@ CI 里两个 workflow 的日志 artifact 保留完整证据（`spike-mc-aot-log`
 | M | P3 产物校验：完整 IPA 的 `Frameworks/` 里已有 `McAotFramework.framework`（36 MB），主二进制 `LC_LOAD_DYLIB @rpath/McAotFramework`、rpath `@executable_path/Frameworks`。启动顺序因此是：dyld 加载框架 → frameworksupport 构造器 `JNI_CreateJavaVM` → AOTBridge 6 秒后 `JNI_GetCreatedJavaVMs` + `FindClass("dev/mcjava/spike/McMain")` + `main`。产物已存 `dist/aot-spike/prototype/`（含 SHA-256、安装与日志抓取说明） | 只剩**真机运行时验证**：装包后抓 `[AOT]` 日志链，确认 VM 创建与 JNI 解析，再定位首个 GL/窗口失败点。GL 桥接是最后一块 |
 
 **当前状态**：从「可行性 spike」到「可安装的集成原型」已全部完成；剩余工作是真机日志驱动的一轮修复（GLFW/GL 上下文对接宿主 UIKit）。
+
+| N | **单 VM 路线探针**：用 `spikes/mc-aot/robovm-launcher.xml` + `-cp` 真实运行类路径 AOT 编译 `net.kdt.pojavlaunch.PojavLauncher`（Amethyst 启动器 Java 层） | **编译+链接成功**，phantom 仅 6 个：`com.apple.eawt.Application`、`java.beans.Beans`、`sun.font.FontUtilities`、`org.robovm.objc.ObjCObject`、两个 errorprone 注解——都是非关键路径。说明「启动器 Java 层也 AOT 进同一个 RoboVM VM」是可行的，这是解决双 VM 架构的正路 |
+| O | GL 函数解析链路修复后重建 Amethyst+AOT（run `42791738550`）成功：framework 内加入 `libcompat-ios.a`（arm64 iPhoneOS，Mach-O symtab 符号解析），`build-ios-aot.yml` 产物仍 PASS | 待下载产物做符号级校验；真机日志仍是最终判据 |
+
+**架构决策倾向**：走 **单 VM**——把 Amethyst 的启动器 Java 层与 MC 一起 AOT，宿主 Obj-C UI 通过 JNI 调 RoboVM VM；这样 GLFW 窗口/输入/回调都在同一个 VM 里，才能「可以玩」。双 VM 方案只适合做演示，不适合可玩版本。
