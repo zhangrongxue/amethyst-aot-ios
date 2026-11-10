@@ -59,10 +59,13 @@ jobs:
           set +e
           CP="work/spike-classes:$(ls work/mc/*.jar work/mc/libs/*.jar 2>/dev/null | tr '\n' ':')"
           export JAVA_HOME="$JAVA_HOME"
+          # Absolute output path: the compiler links from a temp build dir, a
+          # relative -o makes ld fail with "open() failed, errno=2".
+          OUT="$PWD/work/mc-aot-spike"
           work/robovm/bin/robovm \
             -config spikes/mc-aot/robovm.xml \
             -cp "$CP" \
-            -o work/mc-aot-spike \
+            -o "$OUT" \
             -os macosx -arch arm64 -target console \
             -verbose \
             dev.mcjava.spike.McMain 2>&1 | tee work/spike.log
@@ -71,8 +74,14 @@ jobs:
       - name: Summarise failure classes
         if: always()
         run: |
-          echo "=== first 120 error lines ==="
-          grep -nE 'error|Error|Undefined symbols|Unsupported|not found|NoClassDefFound|Caused by' work/spike.log | head -120 || true
+          echo "=== compiled class count ==="
+          grep -c '^Compiling ' work/spike.log || true
+          echo "=== undefined symbols (JNI surface) ==="
+          grep -nE 'Undefined symbols|referenced from|ld: symbol' work/spike.log | head -80 || true
+          echo "=== phantom classes (missing Java 8 APIs in RoboVM rt) ==="
+          grep -o 'Warning: [^ ]* is a phantom class!' work/spike.log | sed 's/Warning: //; s/ is a phantom class!//' | sort -u | tee work/phantom-classes.txt | head -60 || true
+          echo "=== other errors ==="
+          grep -nE 'error:|Error|Unsupported|Caused by' work/spike.log | head -60 || true
           echo "=== log size: $(wc -l < work/spike.log) lines ==="
 
       - name: Upload spike log
@@ -82,5 +91,6 @@ jobs:
           name: spike-mc-aot-log
           path: |
             work/spike.log
+            work/phantom-classes.txt
             work/mc-aot-spike
           if-no-files-found: warn
