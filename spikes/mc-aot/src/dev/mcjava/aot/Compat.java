@@ -58,4 +58,13 @@ public final class Compat {
     public static long fieldOffsetObject(Object container, Object value) {
         return 0L;
     }
+
+    /**
+     * Replacement for {@code sun.misc.Unsafe.pageSize()}, which RoboVM's Unsafe
+     * does not ship (it comes from Java 9+). 16 KiB matches Apple Silicon pages;
+     * LWJGL only uses it for alignment, so any page-size multiple is safe.
+     */
+    public static int pageSize() {
+        return 16384;
+    }
 }

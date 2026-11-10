@@ -69,6 +69,12 @@ public final class Java8Shim {
                     "dev/mcjava/aot/Compat", "fieldOffsetObject",
                     "(Ljava/lang/Object;Ljava/lang/Object;)J"
             },
+            {
+                    "sun/misc/Unsafe", "pageSize",
+                    "()I",
+                    "dev/mcjava/aot/Compat", "pageSize",
+                    "()I"
+            },
     };
 
     public static void main(String[] args) throws Exception {
