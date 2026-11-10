@@ -23,6 +23,11 @@ on:
         type: boolean
         required: false
         default: false
+      launcher_closure:
+        description: AOT-compile the Amethyst launcher layer (single-VM probe)
+        type: boolean
+        required: false
+        default: false
 
 jobs:
   spike:
@@ -172,6 +177,25 @@ jobs:
             echo "no framework binary produced"
           fi
 
+      - name: AOT compile the launcher layer (single-VM path probe)
+        if: ${{ github.event.inputs.launcher_closure == 'true' }}
+        run: |
+          set +e
+          OUT="$PWD/work/launcher-aot"
+          rm -rf "$OUT"; mkdir -p "$OUT"
+          work/robovm/bin/robovm \
+            -config spikes/mc-aot/robovm-launcher.xml \
+            -cp "$SPIKE_CP" \
+            -bcp "$SPIKE_BCP" \
+            -o launcher-aot -d "$OUT" \
+            -os macosx -arch arm64 -target console -verbose \
+            net.kdt.pojavlaunch.PojavLauncher 2>&1 | tee work/launcher-aot.log
+          echo "robovm launcher exit=${PIPESTATUS[0]}"
+          echo "=== errors ==="
+          grep -nE 'error:|Unsupported|NoClassDef|not found|Caused by' work/launcher-aot.log | head -40 || true
+          echo "=== phantom classes ==="
+          grep -o 'Warning: [^ ]* is a phantom class!' work/launcher-aot.log | sed 's/Warning: //; s/ is a phantom class!//' | sort -u | tee work/launcher-phantom.txt | head -60 || true
+
       - name: AOT build for iOS + fix dylib names + package unsigned IPA
         if: ${{ github.event.inputs.ios_link != 'false' }}
         run: |
@@ -291,6 +315,8 @@ jobs:
             work/spike-run.log
             work/ios-link.log
             work/ios-framework.log
+            work/launcher-aot.log
+            work/launcher-phantom.txt
             work/amethyst-aot-unsigned.ipa
             work/phantom-classes.txt
             work/spike-out/mc-aot-spike

@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Feasibility config for AOT-compiling the Amethyst launcher layer
+  (net.kdt.pojavlaunch.*) instead of only Minecraft. The main class is passed
+  positionally on the command line so this config stays generic.
+-->
+<config>
+    <executableName>launcher-aot</executableName>
+</config>
