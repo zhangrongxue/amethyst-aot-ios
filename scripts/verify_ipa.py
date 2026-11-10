@@ -134,26 +134,32 @@ def check(ipa: str) -> dict:
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("ipa")
+    ap.add_argument("ipa", nargs="+")
     ap.add_argument("--json")
     args = ap.parse_args()
 
-    report = check(args.ipa)
+    reports = []
+    for path in args.ipa:
+        report = check(path)
+        reports.append(report)
+
+        print(f"IPA: {report['ipa']}")
+        print(f"  size: {report['info'].get('bytes', 0) / 1024 / 1024:.1f} MiB, entries: {report['info'].get('entries')}")
+        print(f"  app: {report['info'].get('app')} bundle={report['info'].get('bundleId')}")
+        print(f"  binary: {report['info'].get('binaryKind')} executable={report['info'].get('executable')}")
+        print(f"  frameworks: {report['info'].get('frameworks')}  signatures: {report['info'].get('codeSignatureEntries')}")
+        for w in report["warnings"]:
+            print(f"  WARN  {w}")
+        for e in report["errors"]:
+            print(f"  FAIL  {e}")
+        print("RESULT:", "PASS" if report["ok"] else "FAIL")
+        print()
+
     if args.json:
         with open(args.json, "w", encoding="utf-8") as fh:
-            json.dump(report, fh, indent=2)
+            json.dump(reports if len(reports) > 1 else reports[0], fh, indent=2)
 
-    print(f"IPA: {report['ipa']}")
-    print(f"  size: {report['info'].get('bytes', 0) / 1024 / 1024:.1f} MiB, entries: {report['info'].get('entries')}")
-    print(f"  app: {report['info'].get('app')} bundle={report['info'].get('bundleId')}")
-    print(f"  binary: {report['info'].get('binaryKind')} executable={report['info'].get('executable')}")
-    print(f"  frameworks: {report['info'].get('frameworks')}  signatures: {report['info'].get('codeSignatureEntries')}")
-    for w in report["warnings"]:
-        print(f"  WARN  {w}")
-    for e in report["errors"]:
-        print(f"  FAIL  {e}")
-    print("RESULT:", "PASS" if report["ok"] else "FAIL")
-    return 0 if report["ok"] else 1
+    return 0 if all(r["ok"] for r in reports) else 1
 
 
 if __name__ == "__main__":

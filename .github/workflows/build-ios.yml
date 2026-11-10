@@ -88,6 +88,7 @@ jobs:
           python3 scripts/verify_ipa.py artifacts/*.ipa --json artifacts/ipa-report.json | tee artifacts/ipa-verify.txt
 
       - name: Upload unsigned IPA
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: amethyst-unsigned-ipa
@@ -95,6 +96,7 @@ jobs:
             artifacts/*.ipa
             artifacts/ipa-report.json
             artifacts/ipa-verify.txt
+          if-no-files-found: warn
 
       - name: Upload dSYM and build log
         if: always()
