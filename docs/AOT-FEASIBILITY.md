@@ -76,3 +76,13 @@ gh workflow run spike-jni.yml
 ```
 
 CI 里两个 workflow 的日志 artifact 保留完整证据（`spike-mc-aot-log`、`spike-jni-log`）。
+
+## P1 运行时探针记录（MC 1.8.9，AOT 二进制在 macOS 上实际执行）
+
+| 轮次 | 观察 | 处置 |
+|---|---|---|
+| A | 进入 `net.minecraft.client.main.Main.main`，log4j 用 `Class.forName` 找 provider 失败（`Log4jContextFactory` 未链接） | robovm.xml 增加 `forceLinkClasses: org.apache.logging.log4j.core.**` |
+| B | `java.lang.NoClassDefFoundError: java.util.function.Function`，位置 `org.lwjgl.system.Configuration.<clinit>` → `GLFW.<clinit>` → `Sys.getTime` → MC 主路径 | 从 Temurin JDK8 `rt.jar` 抽取 `java/util/function`、`java/util/stream`、`Spliterator`、`Optional` 打成 `java8-extras.jar`，追加到 `-bcp` |
+| C | log4j 能实例化，但 JMX 注册触发 `java.lang.management.ManagementFactory` 缺失 → 回退 SimpleLogger；随后 `java.nio.file.Paths` 缺失，位置 `org.lwjgl.system.Library.<clinit>` → `Library.loadSystem`（动态加载原生库） | 下一步：AOT 下原生库应静态链接，需把 `Library.loadSystem` patch 成 no-op（ASM 改写），或提供最小 `java.nio.file` 桩；同时去掉/绕开 log4j-core 的 JMX |
+
+**里程碑含义**：到 C 为止，AOT 二进制已经完整跑过 MC 的参数解析、资源目录初始化、日志框架初始化，并进入 LWJGL 的静态初始化。失败点全部是「运行时缺类/动态加载」，不是编译器或字节码问题。下一步 patch 掉动态加载后，预期会到达第一个原生的 GLFW 调用（`UnsatisfiedLinkError`），那就是 P1 的终点、P2（静态链接 LWJGL）的起点。
