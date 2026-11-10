@@ -1,5 +1,9 @@
 package dev.mcjava.spike;
 
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.PrintStream;
+
 import net.kdt.pojavlaunch.JMinecraftVersionList;
 import net.kdt.pojavlaunch.Tools;
 import net.kdt.pojavlaunch.value.MinecraftAccount;
@@ -19,7 +23,33 @@ public final class AotMain {
     private AotMain() {
     }
 
+    /** Mirrors stdout/stderr into Documents/aot.log so device logs can be pulled. */
+    private static void redirectLogs() {
+        String home = System.getenv("AME_HOME");
+        if (home == null || home.isEmpty()) {
+            return;
+        }
+        try {
+            File logFile = new File(new File(home), "aot.log");
+            PrintStream ps = new PrintStream(new FileOutputStream(logFile, true), true, "UTF-8");
+            System.setOut(ps);
+            System.setErr(ps);
+            ps.println("==== AOT launch ====");
+        } catch (Throwable t) {
+            System.err.println("[AotMain] cannot open aot.log: " + t);
+        }
+    }
+
     public static void main(String[] args) throws Throwable {
+        redirectLogs();
+        Thread.setDefaultUncaughtExceptionHandler(new Thread.UncaughtExceptionHandler() {
+            @Override
+            public void uncaughtException(Thread thread, Throwable error) {
+                System.err.println("[AotMain] uncaught in " + thread.getName());
+                error.printStackTrace();
+            }
+        });
+
         String username = args.length > 0 && !args[0].isEmpty() ? args[0] : "Player";
         String versionId = args.length > 1 ? args[1] : System.getenv("MEOW_VERSION");
         if (versionId == null || versionId.isEmpty()) {
@@ -29,7 +59,20 @@ public final class AotMain {
 
         System.out.println("[AotMain] version=" + versionId + " user=" + username
                 + " gameDir=" + System.getenv("GAME_DIR"));
+        System.out.println("[AotMain] AME_HOME=" + System.getenv("AME_HOME")
+                + " RENDERER=" + System.getenv("RENDERER"));
 
+        try {
+            boot(username, versionId);
+        } catch (Throwable t) {
+            System.err.println("[AotMain] boot failed");
+            t.printStackTrace();
+            throw t;
+        }
+        System.out.println("[AotMain] MC main returned");
+    }
+
+    private static void boot(String username, String versionId) throws Throwable {
         String screen = System.getenv("MEOW_SCREEN");
         System.setProperty("glfw.windowSize", screen != null ? screen : "1280x720");
         System.setProperty("org.lwjgl.vulkan.libname", "libMoltenVK.dylib");
