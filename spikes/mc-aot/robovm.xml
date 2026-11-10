@@ -1,20 +1,9 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<!--
-  Feasibility spike configuration: ask MobiVM/RoboVM to AOT-compile
-  net.minecraft.client.main.Main and its static closure from a real
-  Minecraft 1.12.2 client jar.
-
-  We do not expect the link step to succeed yet: the closure reaches
-  LWJGL native methods. The value of the spike is the compiler/linker
-  error list, which tells us exactly what a full port has to solve.
--->
 <config>
     <executableName>mc-aot-spike</executableName>
     <mainClass>dev.mcjava.spike.McMain</mainClass>
-
-    <!-- log4j loads its provider by name; RoboVM needs it force-linked. -->
-    <forceLinkClasses>
-        <pattern>org.apache.logging.log4j.core.**</pattern>
-        <pattern>org.apache.logging.log4j.message.**</pattern>
-    </forceLinkClasses>
+    <!--
+      No forceLinkClasses for log4j: log4j-core is dropped from the AOT classpath
+      on purpose (its JMX registration needs java.lang.management, which RoboVM
+      does not ship). Log4j falls back to SimpleLogger.
+    -->
 </config>

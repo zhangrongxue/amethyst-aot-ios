@@ -72,12 +72,27 @@ jobs:
           ls -la work/java8-extras.jar
           unzip -l work/java8-extras.jar | tail -3
 
+      - name: Build AOT patcher and neutralise LWJGL dynamic loading
+        run: |
+          curl -fSL --retry 3 -o work/asm.jar https://repo1.maven.org/maven2/org/ow2/asm/asm/9.7/asm-9.7.jar
+          curl -fSL --retry 3 -o work/asm-tree.jar https://repo1.maven.org/maven2/org/ow2/asm/asm-tree/9.7/asm-tree-9.7.jar
+          mkdir -p work/patch-classes
+          javac --release 8 -encoding UTF-8 -cp work/asm.jar:work/asm-tree.jar \
+            -d work/patch-classes tools/aot-patch/src/dev/mcjava/patch/AotPatch.java
+          java -cp work/patch-classes:work/asm.jar:work/asm-tree.jar \
+            dev.mcjava.patch.AotPatch \
+            JavaApp/libs/lwjgl/lwjgl.jar work/lwjgl-patched.jar \
+            org.lwjgl.system.Library loadSystem
+          unzip -p work/lwjgl-patched.jar org/lwjgl/system/Library.class | wc -c
+
       - name: AOT compile MC closure (expected to fail; we mine the errors)
         run: |
           set +e
           # Amethyst runs 1.8.9+ through LWJGL3 + the lwjglx compatibility layer,
           # so the vanilla LWJGL 2.x jars must be replaced by the launcher's own set.
-          CP="work/spike-classes:$(ls work/mc/*.jar work/mc/libs/*.jar 2>/dev/null | grep -v '/lwjgl' | tr '\n' ':')$(ls JavaApp/libs/lwjgl/*.jar | tr '\n' ':')"
+          # log4j-core is dropped: its JMX path needs java.lang.management.
+          LWJGL_JARS="$(ls JavaApp/libs/lwjgl/*.jar | grep -v '/lwjgl\.jar$' | tr '\n' ':')"
+          CP="work/spike-classes:work/lwjgl-patched.jar:$(ls work/mc/*.jar work/mc/libs/*.jar 2>/dev/null | grep -v '/lwjgl' | grep -v 'log4j-core' | tr '\n' ':')$LWJGL_JARS"
           # Append the Java 8 extras to the boot classpath: RoboVM rt wins for the
           # classes it has, the extras fill java.util.function / java.util.stream.
           BCP="work/robovm/lib/robovm-rt.jar:work/java8-extras.jar"
