@@ -14,6 +14,7 @@
 | 2 | `spike-mc-aot`（RoboVM 2.3.23）编译 MC 1.12.2 全闭包 | **编译 8,633 个类成功，链接成功**，产出 macOS arm64 console 二进制；157 个 phantom 类（`java.util.stream`/`function`/`java.nio.file`/`java.awt`/`javax.imageio`） |
 | 3 | `spike-jni`：Java native 方法 + C 静态库（`libspikejni.a`） | **运行时输出 `JNI-RESULT 42`** —— RoboVM 能解析并调用静态链接的 JNI 方法 |
 | 4 | MC 1.8.9 vs 1.12.2 的 Java 8 API 依赖对比 | 1.8.9：`java/util/stream` **0**、`java/util/function` **0**、`java/nio/file` **0**；1.12.2 分别为 26/74/34 |
+| 4b | `spike-mc-aot` 编译 MC **1.8.9**（Amethyst 的 LWJGL3+lwjglx 类路径） | **7,253 个类编译 + 链接成功**；phantom 降到 **102 个**（javax.sound.midi 16、java.awt 22、java.nio.file 8、javax.naming 13、javassist 6） |
 | 5 | Amethyst 自带 `liblwjgl*.dylib` 的导出符号（Mach-O export trie） | `liblwjgl.dylib` 1,824 个导出、`liblwjgl_opengl.dylib` 2,228 个导出，均为标准 `Java_org_lwjgl_*` JNI 符号，且含 `JNI_OnLoad` |
 | 6 | LWJGL iOS 源码可得性 | `PojavLauncherTeam/lwjgl3`、`AngelAuraMC/lwjgl3` 均可访问；Amethyst-iOS-MyRemastered 仓库内 vendored 了完整 LWJGL 源码树与 `ci_build_ios.bash` |
 
