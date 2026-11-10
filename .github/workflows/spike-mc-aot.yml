@@ -236,7 +236,7 @@ jobs:
           BIN="$PWD/work/probe/aotmain-probe"
           if [ ! -x "$BIN" ]; then echo "no probe binary"; exit 0; fi
           export GAME_DIR="$PWD/work/fakegame" AME_HOME="$PWD/work/fakehome" MEOW_SCREEN=1280x720
-          perl -e 'alarm shift; exec @ARGV' 150 "$BIN" 2>&1 | tee work/aotmain-probe-run.log
+          perl -e 'alarm shift; exec @ARGV' 150 "$BIN" Player "$MCV" 2>&1 | tee work/aotmain-probe-run.log
           echo "probe run exit=${PIPESTATUS[0]}"
           echo "=== aot.log ==="
           head -80 "$PWD/work/fakehome/aot.log" 2>/dev/null || echo "no aot.log"
