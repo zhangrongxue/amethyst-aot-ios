@@ -94,11 +94,11 @@ jobs:
           set +e
           mkdir -p work/spike-classes work/ios-framework
           # Native Compat shim: resolves host symbols (pojav*) from Mach-O symtabs.
-          SDK=$(xcrun --show-sdk-path)
-          xcrun --sdk iphoneos clang -c -arch arm64 -isysroot "$SDK" \
+          IOS_SDK=$(xcrun --sdk iphoneos --show-sdk-path)
+          xcrun --sdk iphoneos clang -target arm64-apple-ios14.0 -isysroot "$IOS_SDK" -c \
             -I"$JAVA_HOME/include" -I"$JAVA_HOME/include/darwin" \
             spikes/mc-aot/native/compat.c -o work/compat-ios.o
-          xcrun --sdk iphoneos ar rcs work/libcompat-ios.a work/compat-ios.o 2>/dev/null || ar rcs work/libcompat-ios.a work/compat-ios.o
+          ar rcs work/libcompat-ios.a work/compat-ios.o
           javac --release 8 -encoding UTF-8 -cp "work/mc/client.jar:work/java8-extras.jar" \
             -d work/spike-classes $(find spikes/mc-aot/src -name '*.java')
           APP_JARS="$(ls JavaApp/build/*.jar 2>/dev/null | grep -v '/lwjgl\.jar$' | tr '\n' ':')$(ls JavaApp/libs/others/*.jar 2>/dev/null | tr '\n' ':')"
