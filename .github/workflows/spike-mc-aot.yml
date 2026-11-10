@@ -233,6 +233,9 @@ jobs:
             https://repo1.maven.org/maven2/org/lwjgl/lwjgl-opengl/3.3.3/lwjgl-opengl-3.3.3-natives-macos-arm64.jar
           ( cd work/macnatives && unzip -oq ../lwjgl-mac.jar && unzip -oq ../lwjgl-opengl-mac.jar )
           find work/macnatives -name '*.dylib' | head
+          LCD="$PWD/work/macnatives/macos/arm64/org/lwjgl/liblwjgl.dylib"
+          LOC="$PWD/work/macnatives/macos/arm64/org/lwjgl/opengl/liblwjgl_opengl.dylib"
+          ls -la "$LCD" "$LOC"
           clang -c -fobjc-arc -target arm64-apple-macosx13.0 -isysroot "$(xcrun --show-sdk-path)" \
             -I"$JAVA_HOME/include" -I"$JAVA_HOME/include/darwin" \
             spikes/embed/pojav_mac.m -o work/pojav/pojav_mac.o 2>&1 | tail -20
@@ -242,7 +245,7 @@ jobs:
           work/robovm/bin/robovm \
             -config spikes/mc-aot/robovm-probe-mac.xml \
             -cp "$CP" -bcp "$BCP" \
-            -libs "work/macnatives/liblwjgl.dylib:work/macnatives/liblwjgl_opengl.dylib:$PWD/work/libpojavmac.a" \
+            -libs "$LCD:$LOC:$PWD/work/libpojavmac.a" \
             -o aotmain-probe -d "$PWD/work/probe" \
             -os macosx -arch arm64 -target console -verbose \
             dev.mcjava.spike.AotMain 2>&1 | tee work/aotmain-probe-build.log
