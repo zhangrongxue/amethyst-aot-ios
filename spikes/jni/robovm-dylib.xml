@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<config>
+    <executableName>jnitest-dylib</executableName>
+    <mainClass>dev.mcjava.spike.JniMain</mainClass>
+    <libs>
+        <lib>native/libspikejni.dylib</lib>
+    </libs>
+</config>

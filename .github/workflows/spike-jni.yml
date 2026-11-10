@@ -27,22 +27,25 @@ jobs:
           tar xzf work/robovm-dist.tar.gz -C work/robovm --strip-components=1
           ls work/robovm/lib | head
 
-      - name: Build static JNI library
+      - name: Build static + dynamic JNI library
         run: |
           SDK=$(xcrun --show-sdk-path)
           clang -c -arch arm64 -isysroot "$SDK" \
             -I"$JAVA_HOME/include" -I"$JAVA_HOME/include/darwin" \
             spikes/jni/native/spikejni.c -o spikes/jni/native/spikejni.o
           ar rcs spikes/jni/native/libspikejni.a spikes/jni/native/spikejni.o
+          clang -shared -arch arm64 -isysroot "$SDK" \
+            -o spikes/jni/native/libspikejni.dylib spikes/jni/native/spikejni.o
           ls -la spikes/jni/native/
           nm -g spikes/jni/native/libspikejni.a | grep -E 'JNI_OnLoad|Java_' | head
+          nm -g spikes/jni/native/libspikejni.dylib | grep -E 'JNI_OnLoad|Java_' | head
 
       - name: Compile spike class
         run: |
           mkdir -p work/jni-classes
           javac --release 8 -encoding UTF-8 -d work/jni-classes spikes/jni/src/dev/mcjava/spike/JniMain.java
 
-      - name: AOT build + run
+      - name: AOT build + run (static lib)
         run: |
           set +e
           mkdir -p work/jni-out
@@ -62,6 +65,27 @@ jobs:
             echo "no binary produced"
           fi
 
+      - name: AOT build + run (dynamic lib)
+        run: |
+          set +e
+          mkdir -p work/jni-out-dylib
+          work/robovm/bin/robovm \
+            -config spikes/jni/robovm-dylib.xml \
+            -cp work/jni-classes \
+            -o jnitest-dylib -d work/jni-out-dylib \
+            -os macosx -arch arm64 -target console -verbose \
+            dev.mcjava.spike.JniMain 2>&1 | tee work/jni-dylib-build.log
+          echo "build exit=${PIPESTATUS[0]}"
+          echo "=== app bundle ==="
+          find work/jni-out-dylib -maxdepth 3 -type f | head -20
+          echo "=== running the AOT binary (dylib) ==="
+          if [ -x work/jni-out-dylib/jnitest-dylib ]; then
+            work/jni-out-dylib/jnitest-dylib 2>&1 | tee work/jni-dylib-run.log
+            echo "run exit=${PIPESTATUS[0]}"
+          else
+            echo "no binary produced"
+          fi
+
       - name: Upload logs
         if: always()
         uses: actions/upload-artifact@v4
@@ -70,5 +94,7 @@ jobs:
           path: |
             work/jni-build.log
             work/jni-run.log
+            work/jni-dylib-build.log
+            work/jni-dylib-run.log
             spikes/jni/native/libspikejni.a
           if-no-files-found: warn
