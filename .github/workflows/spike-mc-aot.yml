@@ -86,7 +86,8 @@ jobs:
           fi
           mkdir -p work/game work/assets
           set +e
-          timeout 120 "$BIN" \
+          # macOS has no `timeout`; use perl's alarm as a portable watchdog.
+          perl -e 'alarm shift; exec @ARGV' 120 "$BIN" \
             --gameDir "$PWD/work/game" \
             --assetsDir "$PWD/work/assets" \
             --assetIndex 1.8 \
