@@ -1,0 +1,28 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  RoboVM / MobiVM configuration for the AOT preflight payload.
+
+  Two blocks live inside <forceLinkClasses>:
+
+  * BASE       - patterns that are always needed (the payload itself and the
+                 reflection-heavy Gson runtime it deserializes with).
+  * GENERATED  - injected by tools/reflect-scan from bytecode evidence.
+                 Regenerate with scripts/gen-robovm-config.ps1 (Windows) or
+                 scripts/gen-robovm-config.sh (CI). Manual edits inside this
+                 block are overwritten.
+-->
+<config>
+    <executableName>mcjava-aot</executableName>
+    <mainClass>dev.mcjava.aot.Main</mainClass>
+
+    <forceLinkClasses>
+        <!-- BASE:BEGIN -->
+        <pattern>dev.mcjava.aot.**</pattern>
+        <pattern>com.google.gson.**</pattern>
+        <!-- BASE:END -->
+        <!-- GENERATED:BEGIN -->
+        <pattern>dev.mcjava.aot.Probe</pattern>
+        <!-- GENERATED:END -->
+    </forceLinkClasses>
+</config>
+

@@ -1,0 +1,176 @@
+name: iOS build (unsigned IPA)
+
+on:
+  workflow_dispatch:
+    inputs:
+      mc_version:
+        description: Minecraft version used for the reflection scan
+        required: false
+        default: '1.12.2'
+      skip_aot:
+        description: Skip the MobiVM AOT stage
+        type: boolean
+        required: false
+        default: false
+  push:
+    branches: [main]
+    paths:
+      - 'Makefile'
+      - 'Natives/**'
+      - 'JavaApp/**'
+      - 'mobivm/**'
+      - 'tools/**'
+      - 'scripts/**'
+      - '.github/workflows/**'
+
+concurrency:
+  group: ios-build-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  # Amethyst ships four iOS Java runtimes; the slimmed variant drops them from
+  # the second IPA so the artifact stays small.
+  SLIMMED: '1'
+
+jobs:
+  # ------------------------------------------------------------------ IPA
+  ipa:
+    name: Amethyst iOS (unsigned IPA)
+    runs-on: macos-15
+    timeout-minutes: 180
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Toolchain info
+        run: |
+          xcodebuild -version
+          sw_vers
+          cmake --version | head -1
+
+      - name: Install build dependencies
+        run: |
+          brew install make ldid
+          brew install --cask temurin@8
+          /usr/libexec/java_home -V 2>&1 || true
+
+      - name: Export build environment
+        run: |
+          echo "SDKPATH=$(xcrun --sdk iphoneos --show-sdk-path)" >> $GITHUB_ENV
+          echo "BOOTJDK=$(/usr/libexec/java_home -v 1.8)/bin" >> $GITHUB_ENV
+          echo "PATH=/opt/homebrew/bin:$PATH" >> $GITHUB_ENV
+
+      - name: Build Amethyst (unsigned IPA)
+        run: |
+          set -o pipefail
+          gmake -j"$(sysctl -n hw.ncpu)" dsym package PLATFORM=2 SLIMMED=1 2>&1 | tee build.log
+          ls -la artifacts/
+
+      - name: Verify IPA structure
+        run: |
+          set -o pipefail
+          python3 scripts/verify_ipa.py artifacts/*.ipa --json artifacts/ipa-report.json | tee artifacts/ipa-verify.txt
+
+      - name: Upload unsigned IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: amethyst-unsigned-ipa
+          path: |
+            artifacts/*.ipa
+            artifacts/ipa-report.json
+            artifacts/ipa-verify.txt
+
+      - name: Upload dSYM and build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: amethyst-build-log
+          path: |
+            build.log
+            artifacts/*.dSYM
+          if-no-files-found: warn
+
+  # --------------------------------------------------------- MobiVM AOT
+  aot:
+    name: MobiVM AOT pipeline
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.skip_aot == false }}
+    runs-on: macos-15
+    timeout-minutes: 90
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+
+      - name: Fetch Minecraft jars
+        env:
+          MC_VERSION: ${{ github.event.inputs.mc_version || '1.12.2' }}
+        run: |
+          python3 scripts/fetch_minecraft.py --version "$MC_VERSION" --out work/mc --os osx --arch arm64
+          du -sh work/mc
+
+      - name: Build reflection scanner
+        run: mvn -B -q -f tools/reflect-scan/pom.xml -DskipTests package
+
+      - name: Scan Minecraft jars (real reflection surface)
+        run: |
+          java -jar tools/reflect-scan/target/reflect-scan.jar \
+            --jars work/mc --out work/scan-mc --min-package-hits 3
+          cat work/scan-mc/reflection-report.md
+
+      - name: Build AOT payload
+        run: mvn -B -q -f mobivm/pom.xml -DskipTests package
+
+      - name: Scan AOT payload classpath
+        run: |
+          mkdir -p work/scan-payload-input
+          cp work/mc/gson-*.jar work/scan-payload-input/ 2>/dev/null || true
+          cp mobivm/target/mcjava-aot.jar work/scan-payload-input/
+          java -jar tools/reflect-scan/target/reflect-scan.jar \
+            --jars work/scan-payload-input --out work/scan-payload --min-package-hits 2
+
+      - name: Generate robovm.xml forceLinkClasses
+        run: |
+          bash scripts/gen-robovm-config.sh work/scan-payload/force-link-classes.txt mobivm/robovm.xml
+          sed -n '1,60p' mobivm/robovm.xml
+
+      - name: Reference run on the JVM
+        run: |
+          mvn -B -q -f mobivm/pom.xml exec:java -Dexec.mainClass=dev.mcjava.aot.Main 2>&1 | tee work/jvm-run.txt
+          grep MCJAVA-AOT work/jvm-run.txt | tail -1 | tee work/jvm-expected.txt
+
+      - name: AOT compile and run with MobiVM
+        run: |
+          mvn -B -f mobivm/pom.xml -Drobovm.arch=arm64 robovm:console 2>&1 | tee work/aot-run.txt
+          grep MCJAVA-AOT work/aot-run.txt | tail -1 | tee work/aot-actual.txt
+
+      - name: Compare JVM vs AOT output
+        run: |
+          echo "JVM : $(cat work/jvm-expected.txt)"
+          echo "AOT : $(cat work/aot-actual.txt)"
+          diff -u work/jvm-expected.txt work/aot-actual.txt
+          echo "AOT output matches the JVM reference."
+
+      - name: Upload AOT artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mobivm-aot
+          path: |
+            work/scan-mc
+            work/scan-payload
+            work/jvm-run.txt
+            work/aot-run.txt
+            mobivm/target/robovm
+            mobivm/robovm.xml
+          if-no-files-found: warn
