@@ -252,19 +252,18 @@ jobs:
           echo "probe build exit=${PIPESTATUS[0]}"
           BIN="$PWD/work/probe/aotmain-probe"
           if [ ! -x "$BIN" ]; then echo "no probe binary"; exit 0; fi
-          # The Maven dylibs carry a relative install name; point the probe at
-          # the extracted absolute paths before running.
-          for dep in $(otool -L "$BIN" | tail -n +2 | awk '{print $1}' | grep '^bin/libs/native'); do
-            base=$(basename "$dep")
-            case "$base" in
-              *opengl*) install_name_tool -change "$dep" "$LOC" "$BIN" ;;
-              *) install_name_tool -change "$dep" "$LCD" "$BIN" ;;
-            esac
-          done
-          codesign -f -s - "$BIN" 2>/dev/null || true
+          # The Maven dylibs keep their build-time relative install name
+          # (bin/libs/native/...), and install_name_tool cannot grow the load
+          # commands (no header padding). Instead assemble that relative tree
+          # and run the probe from its root so dyld resolves the names.
+          FAKE="$PWD/work/fakeroot"
+          rm -rf "$FAKE"
+          mkdir -p "$FAKE/bin/libs/native/macos/arm64/org/lwjgl/opengl"
+          cp "$LCD" "$FAKE/bin/libs/native/macos/arm64/org/lwjgl/liblwjgl.dylib"
+          cp "$LOC" "$FAKE/bin/libs/native/macos/arm64/org/lwjgl/opengl/liblwjgl_opengl.dylib"
           otool -L "$BIN" | head -12
           export GAME_DIR="$PWD/work/fakegame" AME_HOME="$PWD/work/fakehome" MEOW_SCREEN=1280x720
-          perl -e 'alarm shift; exec @ARGV' 150 "$BIN" Player "$MCV" 2>&1 | tee work/aotmain-probe-run.log
+          ( cd "$FAKE" && perl -e 'alarm shift; exec @ARGV' 150 "$BIN" Player "$MCV" ) 2>&1 | tee work/aotmain-probe-run.log
           echo "probe run exit=${PIPESTATUS[0]}"
           echo "=== aot.log ==="
           head -80 "$PWD/work/fakehome/aot.log" 2>/dev/null || echo "no aot.log"
