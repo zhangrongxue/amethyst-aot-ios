@@ -211,15 +211,21 @@ jobs:
             https://repo1.maven.org/maven2/org/lwjgl/lwjgl/3.3.3/lwjgl-3.3.3-sources.jar
           ( cd work/memutil-src && unzip -oq ../lwjgl-src.jar 'org/lwjgl/system/MemoryUtil.java' )
           python3 - <<'PYEOF'
-          import re
           p = 'work/memutil-src/org/lwjgl/system/MemoryUtil.java'
-          s = open(p).read()
-          s = s.replace('PAGE_SIZE = UNSAFE.pageSize();', 'PAGE_SIZE = 16384;')
-          for name in ['PARENT_BYTE', 'PARENT_SHORT', 'PARENT_CHAR', 'PARENT_INT',
-                       'PARENT_LONG', 'PARENT_FLOAT', 'PARENT_DOUBLE']:
-              s = re.sub(name + r' = getFieldOffsetObject\([^;]*\);', name + ' = 0;', s)
-          open(p, 'w').write(s)
-          print('[memutil] patched', s.count('PAGE_SIZE = 16384;'), 'pageSize and PARENT_* offsets')
+          lines = open(p).read().splitlines()
+          out = []
+          parents = 0
+          for line in lines:
+              if 'PARENT_' in line and 'getFieldOffsetObject' in line:
+                  name = line.strip().split('=')[0].strip()
+                  out.append('            ' + name + ' = 0;')
+                  parents += 1
+              elif 'UNSAFE.pageSize()' in line:
+                  out.append('        PAGE_SIZE = 16384;')
+              else:
+                  out.append(line)
+          open(p, 'w').write('\n'.join(out) + '\n')
+          print('[memutil] replaced', parents, 'PARENT_* offsets and pageSize')
           PYEOF
           J8=$(/usr/libexec/java_home -v 1.8)
           "$J8/bin/javac" -encoding UTF-8 -cp "JavaApp/libs/lwjgl/lwjgl.jar" \
