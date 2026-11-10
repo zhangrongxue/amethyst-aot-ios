@@ -231,6 +231,10 @@ jobs:
           "$J8/bin/javac" -encoding UTF-8 -cp "JavaApp/libs/lwjgl/lwjgl.jar" \
             -d work/memutil-classes work/memutil-src/org/lwjgl/system/MemoryUtil.java 2>&1 | tail -20
           ls -la work/memutil-classes/org/lwjgl/system/ 2>/dev/null | head
+          # Replace the class inside the shim jar: a duplicate entry on the
+          # classpath does not reliably win, so patch the jar itself.
+          ( cd work/memutil-classes && zip -q -u "$PWD/../../work/lwjgl-shim.jar" org/lwjgl/system/MemoryUtil*.class )
+          unzip -l work/lwjgl-shim.jar | grep MemoryUtil
 
       - name: Probe AotMain bootstrap on macOS (fake game dir)
         if: ${{ github.event.inputs.aotmain_probe == 'true' }}
@@ -253,7 +257,7 @@ jobs:
           cp "work/mc/$MCV.json" "work/fakegame/versions/$MCV/$MCV.json"
 
           APP_JARS="$(ls JavaApp/build/*.jar 2>/dev/null | grep -v '/lwjgl\.jar$' | grep -v '/launcher\.jar$' | tr '\n' ':')$(ls JavaApp/libs/others/*.jar 2>/dev/null | tr '\n' ':')"
-          CP="work/memutil-classes:work/spike-classes:work/lwjgl-shim.jar:work/launcher-aot.jar:$APP_JARS$(ls work/mc/*.jar work/mc/libs/*.jar 2>/dev/null | grep -v '/lwjgl' | grep -v 'log4j-core' | tr '\n' ':')"
+          CP="work/spike-classes:work/lwjgl-shim.jar:work/launcher-aot.jar:$APP_JARS$(ls work/mc/*.jar work/mc/libs/*.jar 2>/dev/null | grep -v '/lwjgl' | grep -v 'log4j-core' | tr '\n' ':')"
           BCP="work/robovm/lib/robovm-rt.jar:work/java8-extras.jar"
           # Real LWJGL macOS natives + pojav* host stubs (AppKit/OpenGL).
           mkdir -p work/macnatives work/pojav
