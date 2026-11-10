@@ -59,17 +59,19 @@ jobs:
           set +e
           CP="work/spike-classes:$(ls work/mc/*.jar work/mc/libs/*.jar 2>/dev/null | tr '\n' ':')"
           export JAVA_HOME="$JAVA_HOME"
-          # Absolute output path: the compiler links from a temp build dir, a
-          # relative -o makes ld fail with "open() failed, errno=2".
-          OUT="$PWD/work/mc-aot-spike"
+          # RoboVM's -o is the *binary name*, not a path: output goes to -d <dir>.
+          OUTDIR="$PWD/work/spike-out"
+          mkdir -p "$OUTDIR"
           work/robovm/bin/robovm \
             -config spikes/mc-aot/robovm.xml \
             -cp "$CP" \
-            -o "$OUT" \
+            -o mc-aot-spike \
+            -d "$OUTDIR" \
             -os macosx -arch arm64 -target console \
             -verbose \
             dev.mcjava.spike.McMain 2>&1 | tee work/spike.log
           echo "robovm exit=${PIPESTATUS[0]}"
+          ls -la "$OUTDIR" || true
 
       - name: Summarise failure classes
         if: always()
