@@ -57,7 +57,9 @@ jobs:
       - name: AOT compile MC closure (expected to fail; we mine the errors)
         run: |
           set +e
-          CP="work/spike-classes:$(ls work/mc/*.jar work/mc/libs/*.jar 2>/dev/null | tr '\n' ':')"
+          # Amethyst runs 1.8.9+ through LWJGL3 + the lwjglx compatibility layer,
+          # so the vanilla LWJGL 2.x jars must be replaced by the launcher's own set.
+          CP="work/spike-classes:$(ls work/mc/*.jar work/mc/libs/*.jar 2>/dev/null | grep -v '/lwjgl' | tr '\n' ':')$(ls JavaApp/libs/lwjgl/*.jar | tr '\n' ':')"
           export JAVA_HOME="$JAVA_HOME"
           # RoboVM's -o is the *binary name*, not a path: output goes to -d <dir>.
           OUTDIR="$PWD/work/spike-out"
