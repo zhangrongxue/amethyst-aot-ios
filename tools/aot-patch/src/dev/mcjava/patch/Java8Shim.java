@@ -73,7 +73,7 @@ public final class Java8Shim {
                     "sun/misc/Unsafe", "pageSize",
                     "()I",
                     "dev/mcjava/aot/Compat", "pageSize",
-                    "()I"
+                    "(Ljava/lang/Object;)I"
             },
     };
 

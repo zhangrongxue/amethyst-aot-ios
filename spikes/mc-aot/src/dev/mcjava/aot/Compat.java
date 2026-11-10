@@ -64,7 +64,7 @@ public final class Compat {
      * does not ship (it comes from Java 9+). 16 KiB matches Apple Silicon pages;
      * LWJGL only uses it for alignment, so any page-size multiple is safe.
      */
-    public static int pageSize() {
+    public static int pageSize(Object unsafe) {
         return 16384;
     }
 }
