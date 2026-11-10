@@ -207,6 +207,7 @@ target_link_libraries(AngelAuraAmethyst
 if(AOT_FRAMEWORK_DIR)
   message(STATUS "Linking RoboVM AOT framework from ${AOT_FRAMEWORK_DIR}")
   target_link_libraries(AngelAuraAmethyst
+    PUBLIC
     "-F${AOT_FRAMEWORK_DIR}"
     "-framework McAotFramework"
   )
