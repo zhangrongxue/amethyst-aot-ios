@@ -22,4 +22,13 @@ public final class Compat {
             }
         };
     }
+
+    /**
+     * Replacement for {@code APIUtil.apiGetFunctionAddress(FunctionProvider, String)}:
+     * the host app exports the native functions, so a process-wide dlsym is enough.
+     */
+    public static native long addressOf(Object provider, String name);
+
+    /** Replacement for {@code APIUtil.apiGetFunctionAddressOptional(SharedLibrary, String)}. */
+    public static native long addressOptional(Object provider, String name);
 }

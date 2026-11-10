@@ -39,6 +39,18 @@ public final class Java8Shim {
                     "dev/mcjava/aot/Compat", "threadLocalWithInitial",
                     "(Ljava/util/function/Supplier;)Ljava/lang/ThreadLocal;"
             },
+            {
+                    "org/lwjgl/system/APIUtil", "apiGetFunctionAddress",
+                    "(Lorg/lwjgl/system/FunctionProvider;Ljava/lang/String;)J",
+                    "dev/mcjava/aot/Compat", "addressOf",
+                    "(Ljava/lang/Object;Ljava/lang/String;)J"
+            },
+            {
+                    "org/lwjgl/system/APIUtil", "apiGetFunctionAddressOptional",
+                    "(Lorg/lwjgl/system/SharedLibrary;Ljava/lang/String;)J",
+                    "dev/mcjava/aot/Compat", "addressOptional",
+                    "(Ljava/lang/Object;Ljava/lang/String;)J"
+            },
     };
 
     public static void main(String[] args) throws Exception {

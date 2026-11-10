@@ -16,6 +16,32 @@
 
 typedef jint (*GetCreatedJavaVMsFn)(JavaVM **, jsize, jsize *);
 
+/* ---------------------------------------------------------------------------
+ * Amethyst host-side functions normally provided by the app binary. The AOT
+ * image resolves them through Compat.addressOf() -> dlsym(RTLD_DEFAULT, ...).
+ * ------------------------------------------------------------------------- */
+__attribute__((used)) int pojavInit(int flag) {
+    printf("[host] pojavInit(%d)\n", flag);
+    return 1;
+}
+
+__attribute__((used)) long pojavCreateContext(long share) {
+    printf("[host] pojavCreateContext(%ld)\n", (long) share);
+    return 0x1111;
+}
+
+__attribute__((used)) void pojavMakeCurrent(long context) {
+    printf("[host] pojavMakeCurrent(%ld)\n", (long) context);
+}
+
+__attribute__((used)) void pojavSwapBuffers(long context) {
+    printf("[host] pojavSwapBuffers(%ld)\n", (long) context);
+}
+
+__attribute__((used)) long pojavGetCurrentContext(void) {
+    return 0x1111;
+}
+
 int main(int argc, char **argv) {
     if (argc < 2) {
         fprintf(stderr, "usage: %s <McAotFramework-binary>\n", argv[0]);
