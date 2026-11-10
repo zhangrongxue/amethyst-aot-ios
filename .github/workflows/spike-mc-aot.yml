@@ -72,6 +72,15 @@ jobs:
           ls -la work/java8-extras.jar
           unzip -l work/java8-extras.jar | tail -3
 
+      - name: Build Amethyst JavaApp (real runtime classpath)
+        run: |
+          brew install --cask temurin@8
+          export BOOTJDK="$(/usr/libexec/java_home -v 1.8)/bin"
+          echo "BOOTJDK=$BOOTJDK"
+          "$BOOTJDK/javac" -version
+          make -C JavaApp -j"$(sysctl -n hw.ncpu)" BOOTJDK="$BOOTJDK"
+          ls -la JavaApp/build
+
       - name: Build AOT patcher and neutralise LWJGL dynamic loading
         run: |
           curl -fSL --retry 3 -o work/asm.jar https://repo1.maven.org/maven2/org/ow2/asm/asm/9.7/asm-9.7.jar
@@ -79,20 +88,23 @@ jobs:
           mkdir -p work/patch-classes
           javac --release 8 -encoding UTF-8 -cp work/asm.jar:work/asm-tree.jar \
             -d work/patch-classes tools/aot-patch/src/dev/mcjava/patch/AotPatch.java
+          LWJGL_JAR=JavaApp/build/lwjgl.jar
+          [ -f "$LWJGL_JAR" ] || LWJGL_JAR=JavaApp/libs/lwjgl/lwjgl.jar
+          echo "patching $LWJGL_JAR"
           java -cp work/patch-classes:work/asm.jar:work/asm-tree.jar \
             dev.mcjava.patch.AotPatch \
-            JavaApp/libs/lwjgl/lwjgl.jar work/lwjgl-patched.jar \
+            "$LWJGL_JAR" work/lwjgl-patched.jar \
             org.lwjgl.system.Library loadSystem
           unzip -p work/lwjgl-patched.jar org/lwjgl/system/Library.class | wc -c
 
       - name: AOT compile MC closure (expected to fail; we mine the errors)
         run: |
           set +e
-          # Amethyst runs 1.8.9+ through LWJGL3 + the lwjglx compatibility layer,
-          # so the vanilla LWJGL 2.x jars must be replaced by the launcher's own set.
-          # log4j-core is dropped: its JMX path needs java.lang.management.
-          LWJGL_JARS="$(ls JavaApp/libs/lwjgl/*.jar | grep -v '/lwjgl\.jar$' | tr '\n' ':')"
-          CP="work/spike-classes:work/lwjgl-patched.jar:$(ls work/mc/*.jar work/mc/libs/*.jar 2>/dev/null | grep -v '/lwjgl' | grep -v 'log4j-core' | tr '\n' ':')$LWJGL_JARS"
+          # Amethyst's runtime classpath: the built JavaApp jars (launcher.jar has
+          # the custom android/util + net.kdt classes, build/lwjgl.jar has the custom
+          # GLFW/Sys) plus the vanilla MC libraries minus log4j-core.
+          APP_JARS="$(ls JavaApp/build/*.jar 2>/dev/null | grep -v '/lwjgl\.jar$' | tr '\n' ':')$(ls JavaApp/libs/others/*.jar 2>/dev/null | tr '\n' ':')"
+          CP="work/spike-classes:work/lwjgl-patched.jar:$APP_JARS$(ls work/mc/*.jar work/mc/libs/*.jar 2>/dev/null | grep -v '/lwjgl' | grep -v 'log4j-core' | tr '\n' ':')"
           # Append the Java 8 extras to the boot classpath: RoboVM rt wins for the
           # classes it has, the extras fill java.util.function / java.util.stream.
           BCP="work/robovm/lib/robovm-rt.jar:work/java8-extras.jar"
