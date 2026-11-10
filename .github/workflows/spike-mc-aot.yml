@@ -202,11 +202,13 @@ jobs:
 
           echo "=== packaging unsigned IPA ==="
           PKG="$PWD/work/ios-pkg"
-          rm -rf "$PKG"; mkdir -p "$PKG/Payload"
+          IPA="$PWD/work/amethyst-aot-unsigned.ipa"
+          rm -rf "$PKG" "$IPA"
+          mkdir -p "$PKG/Payload"
           cp -R "$IOS_OUT" "$PKG/Payload/AmethystAOT.app"
-          ( cd "$PKG" && zip -ry "$PWD/work/amethyst-aot-unsigned.ipa" Payload > /dev/null )
-          ls -la work/amethyst-aot-unsigned.ipa
-          unzip -l work/amethyst-aot-unsigned.ipa | head -20
+          ( cd "$PKG" && zip -ry "$IPA" Payload > /dev/null )
+          ls -la "$IPA"
+          unzip -l "$IPA" | head -20
 
       - name: Run the AOT binary (headless probe)
         if: always()
@@ -252,6 +254,7 @@ jobs:
             work/spike.log
             work/spike-run.log
             work/ios-link.log
+            work/amethyst-aot-unsigned.ipa
             work/phantom-classes.txt
             work/spike-out/mc-aot-spike
             work/ios-out
