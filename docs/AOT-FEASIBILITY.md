@@ -99,3 +99,7 @@ CI 里两个 workflow 的日志 artifact 保留完整证据（`spike-mc-aot-log`
 | G | 加上 Java 8 shim（`ThreadLocal.withInitial` → `Compat.threadLocalWithInitial`）后：ThreadLocal/回调/Pointer 初始化全部推进，最终在 `MemoryUtil.<clinit>` 撞上 `UnsatisfiedLinkError: org.lwjgl.system.jni.JNINativeInterface.nNewDirectByteBuffer(JJ)` | **这是第一个真正的 JNI 原生调用**，也是 P1 的终点。该符号正是 Pojav `liblwjgl.dylib` 的导出（`Java_org_lwjgl_system_jni_*` 50 个 + `JNI.invoke*` 1605 个） |
 
 **P1 完成定义（已达成）**：MC 1.8.9 的 AOT 镜像能在 macOS 上跑完启动器层初始化与 MC 主路径，直到第一个 JNI 原生调用点，且失败符号可定位到 Amethyst 已有原生库的导出。P2 的工作因此变得具体：把该原生库以 macOS/iOS 静态或动态形式接进 AOT 镜像，让 `JNINativeInterface`/`JNI.call*` 解析成功。
+
+| H | 同一 JNI 冒烟测试同时构建 `.a` 与 `.dylib` 两种形式：RoboVM 链接后两者都能解析并运行（都输出 `JNI-RESULT 42`；`System.loadLibrary` 在 dylib 模式下仍报找不到，说明符号解析走的是**构建期链接 + 运行时符号表**，不依赖 loadLibrary） | **P2 捷径成立**：iOS 目标可以直接链接 Amethyst 现有的 `liblwjgl.dylib` / `liblwjgl_opengl.dylib` / `libopenal.dylib` 等 iPhoneOS arm64 产物，不必从源码重建 LWJGL |
+
+**P2 下一步（已明确）**：用 `-os ios -arch arm64 -target ios -skipsign` 把 MC 闭包链接到这些现有 dylib 上，产出 iOS 版 AOT app，验证链接与 JNI 符号；随后处理 GLFW 窗口/GL 上下文对接，再进入 P3 嵌入。
