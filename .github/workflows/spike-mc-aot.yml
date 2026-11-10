@@ -225,10 +225,24 @@ jobs:
           APP_JARS="$(ls JavaApp/build/*.jar 2>/dev/null | grep -v '/lwjgl\.jar$' | grep -v '/launcher\.jar$' | tr '\n' ':')$(ls JavaApp/libs/others/*.jar 2>/dev/null | tr '\n' ':')"
           CP="work/spike-classes:work/lwjgl-shim.jar:work/launcher-aot.jar:$APP_JARS$(ls work/mc/*.jar work/mc/libs/*.jar 2>/dev/null | grep -v '/lwjgl' | grep -v 'log4j-core' | tr '\n' ':')"
           BCP="work/robovm/lib/robovm-rt.jar:work/java8-extras.jar"
+          # Real LWJGL macOS natives + pojav* host stubs (AppKit/OpenGL).
+          mkdir -p work/macnatives work/pojav
+          curl -fSL --retry 3 -o work/lwjgl-mac.jar \
+            https://repo1.maven.org/maven2/org/lwjgl/lwjgl/3.3.3/lwjgl-3.3.3-natives-macos-arm64.jar
+          curl -fSL --retry 3 -o work/lwjgl-opengl-mac.jar \
+            https://repo1.maven.org/maven2/org/lwjgl/lwjgl-opengl/3.3.3/lwjgl-opengl-3.3.3-natives-macos-arm64.jar
+          ( cd work/macnatives && unzip -oq ../lwjgl-mac.jar && unzip -oq ../lwjgl-opengl-mac.jar )
+          find work/macnatives -name '*.dylib' | head
+          clang -c -fobjc-arc -target arm64-apple-macosx13.0 -isysroot "$(xcrun --show-sdk-path)" \
+            -I"$JAVA_HOME/include" -I"$JAVA_HOME/include/darwin" \
+            spikes/embed/pojav_mac.m -o work/pojav/pojav_mac.o 2>&1 | tail -20
+          ar rcs work/libpojavmac.a work/pojav/pojav_mac.o
+
           rm -rf work/probe; mkdir -p work/probe
           work/robovm/bin/robovm \
-            -config spikes/mc-aot/robovm-single.xml \
+            -config spikes/mc-aot/robovm-probe-mac.xml \
             -cp "$CP" -bcp "$BCP" \
+            -libs "work/macnatives/liblwjgl.dylib:work/macnatives/liblwjgl_opengl.dylib:$PWD/work/libpojavmac.a" \
             -o aotmain-probe -d "$PWD/work/probe" \
             -os macosx -arch arm64 -target console -verbose \
             dev.mcjava.spike.AotMain 2>&1 | tee work/aotmain-probe-build.log

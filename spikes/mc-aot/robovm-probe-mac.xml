@@ -1,0 +1,22 @@
+<config>
+    <executableName>aotmain-probe</executableName>
+    <mainClass>dev.mcjava.spike.AotMain</mainClass>
+    <!-- macOS probe only: links AppKit/OpenGL for the pojav* host stubs. -->
+    <frameworks>
+        <framework>AppKit</framework>
+        <framework>OpenGL</framework>
+    </frameworks>
+    <forceLinkClasses>
+        <pattern>dev.mcjava.spike.**</pattern>
+        <pattern>dev.mcjava.aot.**</pattern>
+        <pattern>com.google.gson.**</pattern>
+        <pattern>net.kdt.pojavlaunch.Tools</pattern>
+        <pattern>net.kdt.pojavlaunch.JMinecraftVersionList*</pattern>
+        <pattern>net.kdt.pojavlaunch.value.**</pattern>
+        <pattern>org.lwjgl.glfw.**</pattern>
+        <pattern>org.lwjgl.system.**</pattern>
+        <pattern>net.minecraft.**</pattern>
+        <pattern>com.mojang.**</pattern>
+        <pattern>org.apache.logging.log4j.**</pattern>
+    </forceLinkClasses>
+</config>
