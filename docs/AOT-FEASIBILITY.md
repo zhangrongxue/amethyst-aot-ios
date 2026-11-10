@@ -91,3 +91,7 @@ CI 里两个 workflow 的日志 artifact 保留完整证据（`spike-mc-aot-log`
 | E | 发现 Amethyst 运行时的 `org.lwjgl.glfw.GLFW` / `Sys` 是 **JavaApp 里的自定义 Java 实现**（`JavaApp/src/lwjgl/...`，编译时覆盖到 `JavaApp/build/lwjgl.jar`），并非原始 `libs/lwjgl/*.jar` | P1 下一轮应改用 `make -C JavaApp` 构建产物 + `launcher.jar` 作为 AOT 类路径，才与真机运行一致 |
 
 **P1 结论**：AOT 二进制可运行 MC 主路径（参数/资源/日志 → LWJGL 静态初始化 → 原生库加载点）。动态库加载可被 ASM patch 绕过；真正的下一步是把 Pojav 的 LWJGL/GLFW/OpenAL 原生实现编成静态库并由 RoboVM 提供 JNI，这正是 P2。
+
+| F | 换成 `JavaApp/build` 真实运行类路径后：`GLFW.<clinit>` 执行 `System.load(System.getenv("BUNDLE_PATH") + "/AngelAuraAmethyst")` —— Amethyst 把 JNI 原生代码**静态链进主程序**、再加载自身可执行文件来注册符号；随后因 launcher 未设置 `glfw.windowSize` / `UIScreen.maximumFramesPerSecond` 等属性而 NPE | 这正是 AOT 想要的结构：AOT 镜像本身就是「原生库」。探针需预置 launcher 属性；P2 只要让 RoboVM 镜像导出/解析这些 JNI 符号即可 |
+
+**架构结论**：Amethyst 的 iOS 原生方案 = 原生代码静态链进 App 主二进制 + `System.load(自身)`，而不是加载外部 dylib。这对 AOT 非常有利：RoboVM 产出的镜像天然就是单一可执行文件，JNI 符号是否可解析只取决于 RoboVM 的 `Runtime.nativeLoad`/符号导出机制（P2 验证点）。
