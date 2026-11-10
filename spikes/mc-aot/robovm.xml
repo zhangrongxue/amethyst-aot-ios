@@ -11,4 +11,10 @@
 <config>
     <executableName>mc-aot-spike</executableName>
     <mainClass>dev.mcjava.spike.McMain</mainClass>
+
+    <!-- log4j loads its provider by name; RoboVM needs it force-linked. -->
+    <forceLinkClasses>
+        <pattern>org.apache.logging.log4j.core.**</pattern>
+        <pattern>org.apache.logging.log4j.message.**</pattern>
+    </forceLinkClasses>
 </config>
