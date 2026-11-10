@@ -1,38 +1,50 @@
-# 路线图：从「能装能玩（JRE）」到「整包 AOT」
+# 路线图：从「能装能玩（JRE）」到「整包 AOT（免 JIT）」
 
-当前状态：IPA 走官方 JRE 路线（需要 JIT）；MobiVM AOT 管线独立跑通并在 CI 中验证。
-下面是把它推进到「游戏本体也 AOT」的可行路径，按依赖顺序排列。
+当前状态（2026-11-10）：
+- 交付线：IPA 走官方 JRE 路线（需要 JIT），云端构建已跑通并落到 `dist/`；
+- 研究线：MobiVM 编译器/JNI 可行性已实测通过，详见 **`docs/AOT-FEASIBILITY.md`**。
 
-## 阶段 1：AOT 产物进包（1-2 周）
+本文只保留推进「游戏本体 AOT」的工程阶段与验收标准。
 
-1. 用 MobiVM 的 `framework` target（`robovm.xml` 里 `<target>framework</target>`，或 `robovm:archive`
-   指定打包类型）把 AOT 载荷打成 `mcjava_aot.framework`（内部是 dylib）。
-2. `Makefile` 的 `payload` 目标里把该 framework 复制进 `Payload/AngelAuraAmethyst.app/Frameworks/`，
-   并在 `Natives/CMakeLists.txt` 加链接项。
-3. 在 `Natives/main.m`/`JavaLauncher.m` 里调用 RoboVM 运行时的初始化入口（`rvmInitialize`/线程附着），
-   先只跑「读版本清单 + 校验资源」这种无 UI 的 preflight，验证嵌入可行。
-4. CI 增加「framework 产物存在 + `otool -L` 依赖闭包正确」的检查。
+## P0：可行性（已完成）
 
-## 阶段 2：启动器 Java 层 AOT（2-4 周）
+| 验证项 | 结论 |
+|---|---|
+| MC 类能否被 RoboVM 编译 | ✅ 1.12.2 全闭包 8,633 类编译 + 链接成功 |
+| JNI 静态库能否被调用 | ✅ `JNI-RESULT 42` |
+| LWJGL iOS 原生库形态 | ✅ 标准 JNI 符号（1824 + 2228 个）+ `JNI_OnLoad`，源码可重建 |
+| 目标版本 | ✅ MC 1.8.9（streams/function/nio.file 零依赖）… 1.12.2（需补 API） |
 
-- 把 `JavaApp/src/launcher/net/kdt/pojavlaunch` 里不依赖 JVM 动态特性的部分（版本解析、下载、
-  资源校验、账户）抽成 AOT 模块，通过 JNI/Bridge 暴露给 Obj-C。
-- 保留 JRE 仅用于启动游戏进程（游戏本身仍需完整 JVM）。
-- 扫描器扩展：解析 Forge/Fabric 的 `mods.toml`/`fabric.mod.json`、mixin 配置里的类名，
-  合并进 forceLink。
+## P1：MC 1.8.9 headless 启动（1-2 周）
 
-## 阶段 3：游戏本体 AOT（研究性，不建议作为交付承诺）
+验收：AOT 二进制在 macOS 上跑完参数解析/资源索引，直到第一次 GL 调用前；产出按启动路径排序的 phantom 类清单。
 
-必须先解决四个硬约束：
+- 用 Amethyst 的 LWJGL3 + lwjglx 类路径编译 1.8.9 闭包（`spike-mc-aot.yml` 已支持 `mc_version=1.8.9`）；
+- `tools/compat-scan` 已能列出 blocker/phantom；
+- 需要 patch 的类（若有）用 ASM 做小范围字节码改写（去掉 AWT/stream 依赖）。
 
-1. **字节码版本**：RoboVM 只到 Java 8 语义；MC 1.13+ 是 Java 17 classfile（v61），需要 RoboVM 的
-   ASM/代码生成全面升级到 v61，并支持 records/sealed/indy 等。
-2. **动态类加载**：MC 启动器和模组加载器（Forge/Fabric）在运行时从 jar 加载类，AOT 镜像必须
-   把整个闭包预先链接——等价于「把所有可能的模组组合都编译进去」，不现实。
-3. **JNI/原生库**：LWJGL2/3 通过 `System.loadLibrary` 加载 `.dylib`，RoboVM 只能在构建期静态链接
-   原生库并改 JNI 桥接；Amethyst 现有的 `liblwjgl*.dylib` 需要重写成 RoboVM 可链接的静态库。
-4. **AWT/图形栈**：MC 的窗口/输入/GL 上下文与 Caciocavallo、MetalANGLE/gl4es 的对接要全部改成
-   RoboVM 的 `@Bridge` 形式。
+## P2：LWJGL/GL 静态化与上下文注入（2-4 周）
 
-结论：阶段 3 是「重写一个 MC 运行时」级别的工程，不是本仓库短期目标。现实路线是
-「AOT 启动器 + JRE 跑游戏」，或等 RoboVM 社区把 Java 17 支持补齐。
+验收：AOT 程序在 macOS 桌面创建 GL 上下文并画出第一帧；随后交叉编译到 iOS。
+
+- 从 `PojavLauncherTeam/lwjgl3` 构建 iOS arm64 静态库（`liblwjgl.a`、`liblwjgl_opengl.a`、`liblwjgl_glfw.a`、`libopenal.a`），`robovm.xml <libs>` 链接；
+- 图形后端复用 Amethyst 的 MetalANGLE / gl4es / MobileGlues：RoboVM 侧通过 native 调用创建/绑定 EGL 上下文；
+- GLFW 窗口/回调映射到 `UIView`；先 macOS 桌面验证 JNI+GL 链路，再切 iOS SDK。
+
+## P3：嵌入 Amethyst（2-3 周）
+
+验收：TrollStore/AltStore 安装后，不挂调试器、不授权 JIT 也能进游戏。
+
+- RoboVM `framework` target 打出 dylib，放入 `Payload/AngelAuraAmethyst.app/Frameworks/`；
+- `Natives/main.m` / `JavaLauncher.m` 用 RoboVM 运行时初始化替代 `JLI_Launch`（线程 attach、异常端口、JIT 相关代码全部绕开）；
+- 保留 Obj-C 启动器 UI，游戏入口切到 AOT 的 `net.minecraft.client.main.Main`。
+
+## P4：打磨（持续）
+
+1.8.9 / 1.12.2 双版本回归、无模组、启动时间、内存、崩溃日志；体积（单镜像替代 4 套 JRE，通常更小）。
+
+## 已知不可行 / 不做
+
+- **MC 1.13+**：Java 17 字节码，RoboVM 不支持（除非 RoboVM 自身升级）；
+- **模组**：运行时从 jar 加载类与 AOT 静态闭包冲突，Forge/Fabric 不支持；
+- **1.12.2 的 streams/function**：需要补 OpenJDK 8 类或改写少量类（1.8.9 无此问题，推荐先做 1.8.9）。
