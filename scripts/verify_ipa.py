@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import plistlib
 import struct
 import sys
@@ -38,7 +39,7 @@ REQUIRED_FRAMEWORKS = [
 ]
 
 
-def check(ipa: str) -> dict:
+def check(ipa: str, allow_missing_jre: bool = False) -> dict:
     report: dict = {"ipa": ipa, "ok": True, "errors": [], "warnings": [], "info": {}}
     try:
         zf = zipfile.ZipFile(ipa)
@@ -105,14 +106,20 @@ def check(ipa: str) -> dict:
                     report["warnings"].append(f"main binary cputype={cputype:#x} (expected arm64 0x100000c)")
 
     # Java runtimes
+    # The slimmed IPA intentionally ships without java_runtimes/ (the user picks
+    # a runtime in-app), so a missing runtime is only fatal for the full build.
     missing_jre = []
     for jre in REQUIRED_JRE:
         jvm = f"{root}/java_runtimes/{jre}/lib/server/libjvm.dylib"
         if jvm not in names:
             missing_jre.append(jre)
+    report["info"]["missingJre"] = missing_jre
     if missing_jre:
-        report["ok"] = False
-        report["errors"].append(f"missing java runtime libjvm.dylib for: {missing_jre}")
+        if allow_missing_jre:
+            report["warnings"].append(f"slimmed IPA without java runtimes: {missing_jre}")
+        else:
+            report["ok"] = False
+            report["errors"].append(f"missing java runtime libjvm.dylib for: {missing_jre}")
 
     # Frameworks
     fw = {n.split("/")[-1] for n in names if n.startswith(f"{root}/Frameworks/") and "/" not in n[len(f"{root}/Frameworks/"):]}
@@ -121,11 +128,12 @@ def check(ipa: str) -> dict:
     if missing_fw:
         report["warnings"].append(f"Frameworks missing: {missing_fw}")
 
-    # Unsigned?
-    signed = [n for n in names if "_CodeSignature" in n]
+    # Unsigned? Only the app-level signature matters; bundled frameworks may carry
+    # their own (stale) _CodeSignature directories from upstream builds.
+    signed = [n for n in names if n.startswith(f"{root}/_CodeSignature/")]
     report["info"]["codeSignatureEntries"] = len(signed)
     if signed:
-        report["warnings"].append("IPA contains _CodeSignature entries (not strictly unsigned)")
+        report["warnings"].append("app bundle contains _CodeSignature (not strictly unsigned)")
     report["info"]["hasMobileProvision"] = any(n.endswith("embedded.mobileprovision") for n in names)
 
     zf.close()
@@ -136,11 +144,15 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("ipa", nargs="+")
     ap.add_argument("--json")
+    ap.add_argument("--allow-missing-jre", action="store_true",
+                    help="treat absent java_runtimes/ as expected (slimmed IPA)")
     args = ap.parse_args()
 
     reports = []
     for path in args.ipa:
-        report = check(path)
+        # A slimmed IPA is defined by its name; the build also produces a full one.
+        slimmed = "slimmed" in os.path.basename(path).lower()
+        report = check(path, allow_missing_jre=args.allow_missing_jre or slimmed)
         reports.append(report)
 
         print(f"IPA: {report['ipa']}")
