@@ -103,3 +103,9 @@ CI 里两个 workflow 的日志 artifact 保留完整证据（`spike-mc-aot-log`
 | H | 同一 JNI 冒烟测试同时构建 `.a` 与 `.dylib` 两种形式：RoboVM 链接后两者都能解析并运行（都输出 `JNI-RESULT 42`；`System.loadLibrary` 在 dylib 模式下仍报找不到，说明符号解析走的是**构建期链接 + 运行时符号表**，不依赖 loadLibrary） | **P2 捷径成立**：iOS 目标可以直接链接 Amethyst 现有的 `liblwjgl.dylib` / `liblwjgl_opengl.dylib` / `libopenal.dylib` 等 iPhoneOS arm64 产物，不必从源码重建 LWJGL |
 
 **P2 下一步（已明确）**：用 `-os ios -arch arm64 -target ios -skipsign` 把 MC 闭包链接到这些现有 dylib 上，产出 iOS 版 AOT app，验证链接与 JNI 符号；随后处理 GLFW 窗口/GL 上下文对接，再进入 P3 嵌入。
+
+| I | 用 `-os ios -arch arm64 -target ios -skipsign` + `-libs liblwjgl.dylib:liblwjgl_opengl.dylib` 构建 iOS 版 AOT app：**链接成功**，产出 arm64 iPhoneOS 二进制（min iOS 8.0，Size 36 MB，内置全部 jar），clang++ 链接行确实带上了两个 Amethyst dylib，随后 dsymutil/strip/bitcode_strip/ad-hoc codesign 全部完成 | P2 的链接路径打通。遗留：dylib 的 install name 是构建期相对路径 `bin/libs/native/macos/arm64/org/lwjgl/liblwjgl.dylib`，且 RoboVM 没把 dylib 拷进 app 的 Frameworks。需要：拷贝 dylib 到 `ios-out/Frameworks/` + `install_name_tool -id/-change` 改成 `@rpath/...`，再进 P3 嵌入 |
+
+**P2 收尾清单**：① Frameworks 拷贝 + install_name 修正；② 让 AOT app 真正接管 GLFW 窗口/GL 上下文（对接 Amethyst 的 UIKit/EGL 桥）；③ 在真机（TrollStore/侧载）上验证「不挂调试器、不授权 JIT 也能启动」。
+
+**当前结论**：免 JIT 路线的技术不确定性已基本消除——编译器、JNI、iOS 链接三段都实测通过；剩下是工程集成（install name、上下文注入、嵌入方式）。
