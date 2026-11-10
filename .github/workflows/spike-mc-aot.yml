@@ -18,6 +18,11 @@ on:
         type: boolean
         required: false
         default: true
+      framework:
+        description: Build the RoboVM framework embedding prototype
+        type: boolean
+        required: false
+        default: false
 
 jobs:
   spike:
@@ -135,6 +140,37 @@ jobs:
             dev.mcjava.spike.McMain 2>&1 | tee work/spike.log
           echo "robovm exit=${PIPESTATUS[0]}"
           ls -la "$OUTDIR" || true
+
+      - name: Build RoboVM framework (P3 embedding prototype)
+        if: ${{ github.event.inputs.framework == 'true' }}
+        run: |
+          set +e
+          FW="$PWD/Natives/resources/Frameworks"
+          OUT="$PWD/work/ios-framework"
+          rm -rf "$OUT"; mkdir -p "$OUT"
+          work/robovm/bin/robovm \
+            -config spikes/mc-aot/robovm.xml \
+            -cp "$SPIKE_CP" \
+            -bcp "$SPIKE_BCP" \
+            -libs "$FW/liblwjgl.dylib:$FW/liblwjgl_opengl.dylib" \
+            -plist spikes/mc-aot/Info-framework.plist \
+            -o McAotFramework \
+            -d "$OUT" \
+            -os ios -arch arm64 -target framework -skipsign \
+            -verbose \
+            dev.mcjava.spike.McMain 2>&1 | tee work/ios-framework.log
+          echo "robovm framework exit=${PIPESTATUS[0]}"
+          find "$OUT" -maxdepth 4 | head -30
+          LIB=$(find "$OUT" -type f -name 'McAotFramework' | head -1)
+          if [ -n "$LIB" ]; then
+            file "$LIB"
+            echo "=== exported embedding symbols ==="
+            nm -g "$LIB" 2>/dev/null | grep -E 'rvm|JNI_CreateJavaVM|_Java_' | head -10
+            echo "=== dependencies ==="
+            otool -L "$LIB" | head -20
+          else
+            echo "no framework binary produced"
+          fi
 
       - name: AOT build for iOS + fix dylib names + package unsigned IPA
         if: ${{ github.event.inputs.ios_link != 'false' }}
@@ -254,8 +290,10 @@ jobs:
             work/spike.log
             work/spike-run.log
             work/ios-link.log
+            work/ios-framework.log
             work/amethyst-aot-unsigned.ipa
             work/phantom-classes.txt
             work/spike-out/mc-aot-spike
             work/ios-out
+            work/ios-framework
           if-no-files-found: warn
