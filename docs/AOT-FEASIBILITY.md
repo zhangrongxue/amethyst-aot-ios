@@ -113,3 +113,7 @@ CI 里两个 workflow 的日志 artifact 保留完整证据（`spike-mc-aot-log`
 | J | 完成 Frameworks 拷贝 + `install_name_tool` 修正（主二进制与两个 dylib 的依赖全部改成 `@rpath/...`，dylib 的 `LC_ID` 也改成 `@rpath/...`），重新 ad-hoc 签名，并打包出 **`amethyst-aot-unsigned.ipa`**（15.7 MB，`Payload/AmethystAOT.app`，含 arm64 主二进制 + 两个 Frameworks dylib + 全部 jar） | **可侧载的 iOS AOT 脚手架产物已落地**（`dist/aot-spike/`）。校验：主二进制 `LC_LOAD_DYLIB @rpath/liblwjgl*.dylib`，rpath `@executable_path/Frameworks`，两个 dylib 的 id 均为 `@rpath/...`。仍不可玩：AOT 镜像缺 App 侧 UIKit/GLFW 原生层，P3 嵌入 Amethyst 后解决 |
 
 **P3 入口**：把 AOT 镜像以 framework/dylib 形式嵌进真正的 Amethyst 主程序（保留其 Obj-C/C 原生层与 UIKit），让自定义 GLFW 的 `System.load(自身)` 能解析到 App 侧 JNI 符号，再由 Objective-C 侧初始化 RoboVM 运行时并启动 `McMain`。
+
+| K | 用 `-target framework -plist Info-framework.plist` 构建嵌入原型：**成功**产出 `McAotFramework.framework`（arm64，iOS 平台 platform=2，min iOS 14.0，dylib 36 MB + bundle 资源）。导出符号正是嵌入所需：`JNI_CreateJavaVM` / `JNI_GetCreatedJavaVMs` / `JNI_GetDefaultJavaVMInitArgs` / `rvmInitializeFrameworkWithJVM` / `rvmInstantiateFramework`。framework 的构造器会自动创建 RoboVM VM | **P3 机制确认**：宿主 App 链接/加载该 framework 即可获得 JavaVM，再用 JNI `FindClass("dev/mcjava/spike/McMain")` 调 `main`。遗留：framework 的两个 `LC_LOAD_DYLIB` 仍是构建期路径，需同前 `install_name_tool` 改成 `@rpath/...` |
+
+**P3 集成步骤（已可执行）**：① framework 内 dylib 依赖改 `@rpath`；② 把 `McAotFramework.framework` 放进 Amethyst `Payload/*.app/Frameworks/` 并在 CMake 里链接（或运行时 dlopen）；③ `main.m`/`JavaLauncher.m` 用 `JNI_GetCreatedJavaVMs` 拿 JavaVM，调 `McMain.main(gameDir/assets/…)`；④ 宿主 App 已导出 UIKit/GLFW 的 JNI 符号（自定义 GLFW 的 `nglfw*`），RoboVM 运行时可直接解析；⑤ 真机侧载验证。
