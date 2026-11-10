@@ -86,3 +86,8 @@ CI 里两个 workflow 的日志 artifact 保留完整证据（`spike-mc-aot-log`
 | C | log4j 能实例化，但 JMX 注册触发 `java.lang.management.ManagementFactory` 缺失 → 回退 SimpleLogger；随后 `java.nio.file.Paths` 缺失，位置 `org.lwjgl.system.Library.<clinit>` → `Library.loadSystem`（动态加载原生库） | 下一步：AOT 下原生库应静态链接，需把 `Library.loadSystem` patch 成 no-op（ASM 改写），或提供最小 `java.nio.file` 桩；同时去掉/绕开 log4j-core 的 JMX |
 
 **里程碑含义**：到 C 为止，AOT 二进制已经完整跑过 MC 的参数解析、资源目录初始化、日志框架初始化，并进入 LWJGL 的静态初始化。失败点全部是「运行时缺类/动态加载」，不是编译器或字节码问题。下一步 patch 掉动态加载后，预期会到达第一个原生的 GLFW 调用（`UnsatisfiedLinkError`），那就是 P1 的终点、P2（静态链接 LWJGL）的起点。
+
+| D | 用 ASM 把 `org.lwjgl.system.Library.loadSystem` 三个重载改成空实现后重跑：log4j 正常回退 SimpleLogger，`java.nio.file.Paths` 不再出现在 `Library.<clinit>`，失败点前移到 `Library.loadNative`（`GLFW.<clinit>` 里加载 glfw 原生库） | 说明动态库加载已按预期绕过；剩 `loadNative` 属于 P2 的「原生库句柄/函数表」问题 |
+| E | 发现 Amethyst 运行时的 `org.lwjgl.glfw.GLFW` / `Sys` 是 **JavaApp 里的自定义 Java 实现**（`JavaApp/src/lwjgl/...`，编译时覆盖到 `JavaApp/build/lwjgl.jar`），并非原始 `libs/lwjgl/*.jar` | P1 下一轮应改用 `make -C JavaApp` 构建产物 + `launcher.jar` 作为 AOT 类路径，才与真机运行一致 |
+
+**P1 结论**：AOT 二进制可运行 MC 主路径（参数/资源/日志 → LWJGL 静态初始化 → 原生库加载点）。动态库加载可被 ASM patch 绕过；真正的下一步是把 Pojav 的 LWJGL/GLFW/OpenAL 原生实现编成静态库并由 RoboVM 提供 JNI，这正是 P2。
