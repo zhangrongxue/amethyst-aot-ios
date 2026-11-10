@@ -13,6 +13,11 @@ on:
         description: Soft time budget marker only (minutes)
         required: false
         default: '60'
+      ios_link:
+        description: Also build the iOS-target AOT app linking Amethyst dylibs
+        type: boolean
+        required: false
+        default: true
 
 jobs:
   spike:
@@ -113,6 +118,8 @@ jobs:
           # Append the Java 8 extras to the boot classpath: RoboVM rt wins for the
           # classes it has, the extras fill java.util.function / java.util.stream.
           BCP="work/robovm/lib/robovm-rt.jar:work/java8-extras.jar"
+          echo "SPIKE_CP=$CP" >> "$GITHUB_ENV"
+          echo "SPIKE_BCP=$BCP" >> "$GITHUB_ENV"
           export JAVA_HOME="$JAVA_HOME"
           # RoboVM's -o is the *binary name*, not a path: output goes to -d <dir>.
           OUTDIR="$PWD/work/spike-out"
@@ -128,6 +135,40 @@ jobs:
             dev.mcjava.spike.McMain 2>&1 | tee work/spike.log
           echo "robovm exit=${PIPESTATUS[0]}"
           ls -la "$OUTDIR" || true
+
+      - name: AOT build for iOS (link prebuilt Amethyst dylibs)
+        if: ${{ github.event.inputs.ios_link != 'false' }}
+        run: |
+          set +e
+          IOS_OUT="$PWD/work/ios-out"
+          mkdir -p "$IOS_OUT"
+          FW="$PWD/Natives/resources/Frameworks"
+          echo "iphoneos sdk: $(xcrun --sdk iphoneos --show-sdk-version)"
+          work/robovm/bin/robovm \
+            -config spikes/mc-aot/robovm.xml \
+            -cp "$SPIKE_CP" \
+            -bcp "$SPIKE_BCP" \
+            -libs "$FW/liblwjgl.dylib:$FW/liblwjgl_opengl.dylib" \
+            -o mc-aot-ios \
+            -d "$IOS_OUT" \
+            -os ios -arch arm64 -target ios -skipsign \
+            -verbose \
+            dev.mcjava.spike.McMain 2>&1 | tee work/ios-link.log
+          echo "robovm ios exit=${PIPESTATUS[0]}"
+          echo "=== produced bundle ==="
+          find "$IOS_OUT" -maxdepth 4 | head -40
+          BIN=$(find "$IOS_OUT" -type f -name 'mc-aot-ios' | head -1)
+          if [ -n "$BIN" ]; then
+            echo "binary: $BIN"
+            file "$BIN"
+            echo "=== LC_LOAD_DYLIB ==="
+            otool -L "$BIN" | head -30
+            echo "=== build version ==="
+            vtool -show-build "$BIN" || true
+            ls -la "$(dirname "$BIN")/Frameworks" 2>/dev/null || true
+          else
+            echo "no iOS binary produced"
+          fi
 
       - name: Run the AOT binary (headless probe)
         if: always()
@@ -172,6 +213,8 @@ jobs:
           path: |
             work/spike.log
             work/spike-run.log
+            work/ios-link.log
             work/phantom-classes.txt
             work/spike-out/mc-aot-spike
+            work/ios-out
           if-no-files-found: warn
