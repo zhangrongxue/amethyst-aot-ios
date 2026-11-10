@@ -138,3 +138,7 @@ CI 里两个 workflow 的日志 artifact 保留完整证据（`spike-mc-aot-log`
 | Q | **宿主 JNI 注册桥**：`Natives/AOTBridge.m` 增加 Mach-O symtab 符号解析（`host_symbol`）与 `RegisterNatives` 表——注册 `CallbackBridge.nativeClipboard/nativeSetGrabbing`、`UIKit.showError`、GLFW 的 `nglfwSet*Callback`/`nglfwSetShowingWindow`/`nglfwGetCursorPos(A)`/`glfwSetCursorPos`；设置 `runtimeJavaVMPtr/runtimeJNIEnvPtr` 后调用宿主 `JNI_OnLoadGLFW` 填充 GLFW 全局（`vmGlfwClass`、输入缓冲区）。构建成功：完整 IPA 210.3 MB / 瘦身 52.2 MB，verify PASS | 内置 native 解析不再依赖 RoboVM 的 dlsym 路径。下一步：真机日志验证（装包 → 按 Play → 看 `[AOT] registered N/M host natives` 与后续 MC 启动日志），再逐项修 GL/崩溃 |
 
 **到这里 AOT 侧的主体工程已完成**：AOT 编译真实 MC、JNI/GL 原生函数解析、framework 嵌入、单 VM 启动、宿主 JNI 注册。剩下的都是**运行时联调**，必须依赖真机日志驱动。
+
+| R | 运行时健壮性补强：①`Java8Shim` 增加 `System.load/loadLibrary` → `Compat.loadNoop/loadLibraryNoop` 改写（RoboVM 抛的是 `UnsupportedOperationException`，Amethyst 里 `catch (UnsatisfiedLinkError)` 接不住，GLFW 的 `<clinit>` 会直接炸）；②`robovm-single.xml` 扩大 forceLink 到 `net.minecraft.** / com.mojang.** / org.apache.logging.log4j.**`（反射/注册表查找的类必须在镜像里），并把 `org.lwjgl.**` 收窄为 `org.lwjgl.glfw.**` + `org.lwjgl.system.**`——因为 jar 里 `EXTABGR`/`EXTAbgr` 大小写重复会让 RoboVM 报 "class ... read in from a classfile in which ... was expected"；③`AotMain` 把 stdout/stderr 镜像到 `<AME_HOME>/aot.log` 并安装 uncaught handler，真机不用连 Console 也能取日志 | 构建成功：IPA 210.99 MB / 52.94 MB，verify PASS |
+
+**真机取日志方式**：装了 AOT 包后按 Play，然后到「文件」App 的 Amethyst 目录取 `aot.log`，里面应有 `[AotMain] version=... / resolved version ... / starting net.minecraft.client.main.Main` 以及第一个异常栈。
