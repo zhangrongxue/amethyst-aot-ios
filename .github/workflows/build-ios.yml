@@ -119,8 +119,8 @@ jobs:
           python3 scripts/fetch_minecraft.py --version "$MC_VERSION" --out work/mc --os osx --arch arm64
           du -sh work/mc
 
-      - name: Build reflection scanner
-        run: mvn -B -q -f tools/reflect-scan/pom.xml -DskipTests package
+      - name: Build reflection scanner (runs unit tests)
+        run: mvn -B -f tools/reflect-scan/pom.xml package
 
       - name: Scan Minecraft jars (real reflection surface)
         run: |
