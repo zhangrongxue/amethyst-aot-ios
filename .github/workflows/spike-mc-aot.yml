@@ -28,6 +28,11 @@ on:
         type: boolean
         required: false
         default: false
+      aotmain_probe:
+        description: Build and run the AotMain single-VM bootstrap on macOS
+        type: boolean
+        required: false
+        default: false
 
 jobs:
   spike:
@@ -84,7 +89,7 @@ jobs:
           javac --release 8 -encoding UTF-8 \
             -cp "work/mc/client.jar:work/java8-extras.jar" \
             -d work/spike-classes \
-            $(find spikes/mc-aot/src -name '*.java')
+            $(find spikes/mc-aot/src -name '*.java' ! -name 'AotMain.java')
           find work/spike-classes -name '*.class' | head
 
       - name: Build Amethyst JavaApp (real runtime classpath)
@@ -195,6 +200,46 @@ jobs:
           grep -nE 'error:|Unsupported|NoClassDef|not found|Caused by' work/launcher-aot.log | head -40 || true
           echo "=== phantom classes ==="
           grep -o 'Warning: [^ ]* is a phantom class!' work/launcher-aot.log | sed 's/Warning: //; s/ is a phantom class!//' | sort -u | tee work/launcher-phantom.txt | head -60 || true
+
+
+      - name: Probe AotMain bootstrap on macOS (fake game dir)
+        if: ${{ github.event.inputs.aotmain_probe == 'true' }}
+        env:
+          MCV: ${{ github.event.inputs.mc_version || '1.8.9' }}
+        run: |
+          set +e
+          MLIB="JavaApp/build/launcher.jar"
+          if [ ! -f "$MLIB" ]; then echo "no launcher.jar"; exit 0; fi
+          # MinecraftAccount.<clinit> calls System.loadLibrary -> strip it.
+          java -cp work/patch-classes:work/asm.jar:work/asm-tree.jar \
+            dev.mcjava.patch.AotPatch "$MLIB" work/launcher-aot.jar \
+            net/kdt/pojavlaunch/value/MinecraftAccount "<clinit>"
+          javac --release 8 -encoding UTF-8 \
+            -cp "work/mc/client.jar:work/java8-extras.jar:$MLIB" \
+            -d work/spike-classes spikes/mc-aot/src/dev/mcjava/spike/AotMain.java
+
+          # Fake install: GAME_DIR/versions/<id>/<id>.json + empty AME_HOME.
+          mkdir -p "work/fakehome" "work/fakegame/versions/$MCV"
+          cp "work/mc/$MCV.json" "work/fakegame/versions/$MCV/$MCV.json"
+
+          APP_JARS="$(ls JavaApp/build/*.jar 2>/dev/null | grep -v '/lwjgl\.jar$' | grep -v '/launcher\.jar$' | tr '\n' ':')$(ls JavaApp/libs/others/*.jar 2>/dev/null | tr '\n' ':')"
+          CP="work/spike-classes:work/lwjgl-shim.jar:work/launcher-aot.jar:$APP_JARS$(ls work/mc/*.jar work/mc/libs/*.jar 2>/dev/null | grep -v '/lwjgl' | grep -v 'log4j-core' | tr '\n' ':')"
+          BCP="work/robovm/lib/robovm-rt.jar:work/java8-extras.jar"
+          rm -rf work/probe; mkdir -p work/probe
+          work/robovm/bin/robovm \
+            -config spikes/mc-aot/robovm-single.xml \
+            -cp "$CP" -bcp "$BCP" \
+            -o aotmain-probe -d "$PWD/work/probe" \
+            -os macosx -arch arm64 -target console -verbose \
+            dev.mcjava.spike.AotMain 2>&1 | tee work/aotmain-probe-build.log
+          echo "probe build exit=${PIPESTATUS[0]}"
+          BIN="$PWD/work/probe/aotmain-probe"
+          if [ ! -x "$BIN" ]; then echo "no probe binary"; exit 0; fi
+          export GAME_DIR="$PWD/work/fakegame" AME_HOME="$PWD/work/fakehome" MEOW_SCREEN=1280x720
+          perl -e 'alarm shift; exec @ARGV' 150 "$BIN" 2>&1 | tee work/aotmain-probe-run.log
+          echo "probe run exit=${PIPESTATUS[0]}"
+          echo "=== aot.log ==="
+          head -80 "$PWD/work/fakehome/aot.log" 2>/dev/null || echo "no aot.log"
 
       - name: AOT build for iOS + fix dylib names + package unsigned IPA
         if: ${{ github.event.inputs.ios_link != 'false' }}
@@ -317,6 +362,9 @@ jobs:
             work/ios-framework.log
             work/launcher-aot.log
             work/launcher-phantom.txt
+            work/aotmain-probe-build.log
+            work/aotmain-probe-run.log
+            work/fakehome/aot.log
             work/amethyst-aot-unsigned.ipa
             work/phantom-classes.txt
             work/spike-out/mc-aot-spike

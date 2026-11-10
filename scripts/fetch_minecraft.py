@@ -113,6 +113,12 @@ def main() -> int:
             download(art["url"], os.path.join(out, "libs", fname), art.get("sha1"))
             libraries.append({"name": name, "path": f"libs/{fname}"})
 
+    # Save the full version JSON too: the AOT bootstrap reads it from
+    # <GAME_DIR>/versions/<id>/<id>.json, exactly like the real launcher.
+    with open(os.path.join(out, f"{version_id}.json"), "w", encoding="utf-8") as fh:
+        json.dump(version, fh, indent=2)
+    print(f"[fetch] version json -> {version_id}.json")
+
     meta = {
         "version": version_id,
         "client": {"path": "client.jar", "size": client.get("size"), "sha1": client.get("sha1")},
