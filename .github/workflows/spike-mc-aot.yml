@@ -202,6 +202,30 @@ jobs:
           grep -o 'Warning: [^ ]* is a phantom class!' work/launcher-aot.log | sed 's/Warning: //; s/ is a phantom class!//' | sort -u | tee work/launcher-phantom.txt | head -60 || true
 
 
+      - name: Build MemoryUtil override (pageSize/attachment fix)
+        if: ${{ github.event.inputs.aotmain_probe == 'true' }}
+        run: |
+          set +e
+          mkdir -p work/memutil-src work/memutil-classes
+          curl -fSL --retry 3 -o work/lwjgl-src.jar \
+            https://repo1.maven.org/maven2/org/lwjgl/lwjgl/3.3.3/lwjgl-3.3.3-sources.jar
+          ( cd work/memutil-src && unzip -oq ../lwjgl-src.jar 'org/lwjgl/system/MemoryUtil.java' )
+          python3 - <<'PYEOF'
+          import re
+          p = 'work/memutil-src/org/lwjgl/system/MemoryUtil.java'
+          s = open(p).read()
+          s = s.replace('PAGE_SIZE = UNSAFE.pageSize();', 'PAGE_SIZE = 16384;')
+          for name in ['PARENT_BYTE', 'PARENT_SHORT', 'PARENT_CHAR', 'PARENT_INT',
+                       'PARENT_LONG', 'PARENT_FLOAT', 'PARENT_DOUBLE']:
+              s = re.sub(name + r' = getFieldOffsetObject\([^;]*\);', name + ' = 0;', s)
+          open(p, 'w').write(s)
+          print('[memutil] patched', s.count('PAGE_SIZE = 16384;'), 'pageSize and PARENT_* offsets')
+          PYEOF
+          J8=$(/usr/libexec/java_home -v 1.8)
+          "$J8/bin/javac" -encoding UTF-8 -cp "JavaApp/libs/lwjgl/lwjgl.jar" \
+            -d work/memutil-classes work/memutil-src/org/lwjgl/system/MemoryUtil.java 2>&1 | tail -20
+          ls -la work/memutil-classes/org/lwjgl/system/ 2>/dev/null | head
+
       - name: Probe AotMain bootstrap on macOS (fake game dir)
         if: ${{ github.event.inputs.aotmain_probe == 'true' }}
         env:
@@ -223,7 +247,7 @@ jobs:
           cp "work/mc/$MCV.json" "work/fakegame/versions/$MCV/$MCV.json"
 
           APP_JARS="$(ls JavaApp/build/*.jar 2>/dev/null | grep -v '/lwjgl\.jar$' | grep -v '/launcher\.jar$' | tr '\n' ':')$(ls JavaApp/libs/others/*.jar 2>/dev/null | tr '\n' ':')"
-          CP="work/spike-classes:work/lwjgl-shim.jar:work/launcher-aot.jar:$APP_JARS$(ls work/mc/*.jar work/mc/libs/*.jar 2>/dev/null | grep -v '/lwjgl' | grep -v 'log4j-core' | tr '\n' ':')"
+          CP="work/memutil-classes:work/spike-classes:work/lwjgl-shim.jar:work/launcher-aot.jar:$APP_JARS$(ls work/mc/*.jar work/mc/libs/*.jar 2>/dev/null | grep -v '/lwjgl' | grep -v 'log4j-core' | tr '\n' ':')"
           BCP="work/robovm/lib/robovm-rt.jar:work/java8-extras.jar"
           # Real LWJGL macOS natives + pojav* host stubs (AppKit/OpenGL).
           mkdir -p work/macnatives work/pojav
