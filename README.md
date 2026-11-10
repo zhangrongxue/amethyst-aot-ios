@@ -69,12 +69,23 @@ gmake jre JRE_BASE=https://your.mirror/openjdk/ios-arm64
 **做到了（可复现、CI 每次验证）**
 
 - MobiVM/RoboVM 2.3.23 工具链真实跑通：`mvn -f mobivm/pom.xml -Drobovm.arch=arm64 robovm:console`
-  把 Java 字节码 AOT 编译成 arm64 原生程序并执行；
-- 反射扫描器在**真实 Minecraft 1.12.2 客户端 + 34 个官方库**（Guava / Netty / ICU / JNA / Log4j / Realms …）上运行，
-  自动发现 233 处反射点，生成 73 条 `forceLinkClasses` 与报告（`work/scan-mc/`，CI 里作为 artifact 上传）；
+  把 Java 字节码 AOT 编译成 arm64 原生程序（clang++ 链接 `librobovm-rt.a`）并执行；
+- 反射扫描器在**真实 Minecraft 1.12.2 客户端 + 官方库**（Guava / Netty / ICU / JNA / Log4j / Realms …）上运行：
+  33 个 jar、23,494 个类、233 处反射点、67 个精确类、73 条 `forceLinkClasses`（报告在 `work/scan-mc/`，CI 里作为 artifact 上传）；
 - 扫描结果经 `scripts/gen-robovm-config.*` 注入 `mobivm/robovm.xml`，AOT 程序启动时
   `Class.forName("dev.mcjava.aot.Probe") + getDeclaredMethod + invoke` 成功，说明反射元数据确实被保留；
-- CI 对比 JVM 与 AOT 两条路径的确定性输出，不一致即失败。
+- CI 对比 JVM 与 AOT 两条路径的确定性输出（`MCJAVA-AOT ... hash=ad20b119a15`），不一致即失败；
+- 单元测试：扫描器用 ASM 在测试期生成真实字节码 jar，覆盖 Class.forName、方法/字段查找、ServiceLoader、JDK 类分流。
+
+**云端实测结果（2026-11-10，run #7 全绿）**
+
+| 项 | 结果 |
+|---|---|
+| 完整无签名 IPA | 文件 183.1 MiB（解压内容 521.4 MiB，584 entries），21 个 Frameworks，四套 JRE 的 `libjvm.dylib` 齐全 |
+| 瘦身 IPA（去掉 java_runtimes） | 文件 32.3 MiB（解压内容 81.3 MiB，194 entries） |
+| 校验 | `verify_ipa.py` 对两个 IPA 均 PASS（Info.plist / arm64 Mach-O / Frameworks / 无 Apple 签名，仅 ldid ad-hoc） |
+| AOT job | MobiVM 编译 + 运行 + 与 JVM 输出逐字一致 |
+
 
 **没做到（以及为什么）**
 
