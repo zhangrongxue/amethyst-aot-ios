@@ -18,7 +18,8 @@
         <pattern>net.kdt.pojavlaunch.JMinecraftVersionList*</pattern>
         <pattern>net.kdt.pojavlaunch.value.**</pattern>
         <pattern>net.kdt.pojavlaunch.uikit.**</pattern>
-        <pattern>org.lwjgl.**</pattern>
+        <pattern>org.lwjgl.glfw.**</pattern>
+        <pattern>org.lwjgl.system.**</pattern>
         <pattern>net.minecraft.**</pattern>
         <pattern>com.mojang.**</pattern>
         <pattern>org.apache.logging.log4j.**</pattern>
