@@ -5,6 +5,7 @@ import org.objectweb.asm.ClassWriter;
 import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.tree.AbstractInsnNode;
 import org.objectweb.asm.tree.ClassNode;
+import org.objectweb.asm.tree.InsnNode;
 import org.objectweb.asm.tree.MethodInsnNode;
 import org.objectweb.asm.tree.MethodNode;
 
@@ -73,7 +74,8 @@ public final class Java8Shim {
                     "sun/misc/Unsafe", "pageSize",
                     "()I",
                     "dev/mcjava/aot/Compat", "pageSize",
-                    "(Ljava/lang/Object;)I"
+                    "()I",
+                    "dropReceiver"
             },
     };
 
@@ -126,6 +128,10 @@ public final class Java8Shim {
                 MethodInsnNode m = (MethodInsnNode) insn;
                 for (String[] rule : RULES) {
                     if (m.owner.equals(rule[0]) && m.name.equals(rule[1]) && m.desc.equals(rule[2])) {
+                        if (rule.length > 6 && "dropReceiver".equals(rule[6])) {
+                            // instance call -> static replacement: drop the receiver
+                            mn.instructions.insertBefore(insn, new InsnNode(Opcodes.POP));
+                        }
                         m.owner = rule[3];
                         m.name = rule[4];
                         m.desc = rule[5];
