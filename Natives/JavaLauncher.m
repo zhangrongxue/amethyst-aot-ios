@@ -13,6 +13,7 @@
 #include "utils.h"
 
 #import "ios_uikit_bridge.h"
+#import "AOTBridge.h"
 #import "JavaLauncher.h"
 #import "LauncherPreferences.h"
 #import "MinecraftOptionUtils.h"
@@ -102,6 +103,24 @@ void init_loadCustomJvmFlags(int* argc, const char** argv) {
 
 int launchJVM(NSString *username, id launchTarget, int width, int height, int minVersion) {
     NSLog(@"[JavaLauncher] Beginning JVM launch");
+
+#if defined(AOT_ALWAYS)
+    // AOT build: no JRE. The RoboVM VM already exists (McAotFramework created it
+    // at app launch); run the game bootstrap on it instead of JLI_Launch.
+    NSString *aotVersion = [launchTarget isKindOfClass:NSDictionary.class]
+            ? launchTarget[@"id"] : (NSString *) launchTarget;
+    if (aotVersion != nil && ![aotVersion hasSuffix:@".jar"]) {
+        setenv("MEOW_SCREEN", [[NSString stringWithFormat:@"%dx%d", width, height] UTF8String], 1);
+        int aotRC = AOTBridgeLaunchGame(username.UTF8String, aotVersion.UTF8String);
+        if (aotRC == 0) {
+            NSLog(@"[AOT] AotMain returned");
+            return 0;
+        }
+        NSLog(@"[AOT] AOTBridgeLaunchGame failed (%d)", aotRC);
+    } else {
+        NSLog(@"[AOT] jar launching is not supported in AOT builds");
+    }
+#endif
 
     init_loadDefaultEnv();
     init_loadCustomEnv();

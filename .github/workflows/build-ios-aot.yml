@@ -99,20 +99,25 @@ jobs:
             -I"$JAVA_HOME/include" -I"$JAVA_HOME/include/darwin" \
             spikes/mc-aot/native/compat.c -o work/compat-ios.o
           ar rcs work/libcompat-ios.a work/compat-ios.o
-          javac --release 8 -encoding UTF-8 -cp "work/mc/client.jar:work/java8-extras.jar" \
+          # MinecraftAccount.<clinit> calls System.loadLibrary, which AOT cannot do.
+          java -cp work/patch-classes:work/asm.jar:work/asm-tree.jar \
+            dev.mcjava.patch.AotPatch JavaApp/build/launcher.jar work/launcher-aot.jar \
+            net/kdt/pojavlaunch/value/MinecraftAccount "<clinit>"
+          javac --release 8 -encoding UTF-8 \
+            -cp "work/mc/client.jar:work/java8-extras.jar:JavaApp/build/launcher.jar" \
             -d work/spike-classes $(find spikes/mc-aot/src -name '*.java')
-          APP_JARS="$(ls JavaApp/build/*.jar 2>/dev/null | grep -v '/lwjgl\.jar$' | tr '\n' ':')$(ls JavaApp/libs/others/*.jar 2>/dev/null | tr '\n' ':')"
-          CP="work/spike-classes:work/lwjgl-shim.jar:$APP_JARS$(ls work/mc/*.jar work/mc/libs/*.jar 2>/dev/null | grep -v '/lwjgl' | grep -v 'log4j-core' | tr '\n' ':')"
+          APP_JARS="$(ls JavaApp/build/*.jar 2>/dev/null | grep -v '/lwjgl\.jar$' | grep -v '/launcher\.jar$' | tr '\n' ':')$(ls JavaApp/libs/others/*.jar 2>/dev/null | tr '\n' ':')"
+          CP="work/spike-classes:work/lwjgl-shim.jar:work/launcher-aot.jar:$APP_JARS$(ls work/mc/*.jar work/mc/libs/*.jar 2>/dev/null | grep -v '/lwjgl' | grep -v 'log4j-core' | tr '\n' ':')"
           BCP="work/robovm/lib/robovm-rt.jar:work/java8-extras.jar"
           FW="$PWD/Natives/resources/Frameworks"
           work/robovm/bin/robovm \
-            -config spikes/mc-aot/robovm.xml \
+            -config spikes/mc-aot/robovm-single.xml \
             -cp "$CP" -bcp "$BCP" \
             -libs "$FW/liblwjgl.dylib:$FW/liblwjgl_opengl.dylib:$PWD/work/libcompat-ios.a" \
             -plist spikes/mc-aot/Info-framework.plist \
             -o McAotFramework -d "$PWD/work/ios-framework" \
             -os ios -arch arm64 -target framework -skipsign -verbose \
-            dev.mcjava.spike.McMain 2>&1 | tee work/framework.log
+            dev.mcjava.spike.AotMain 2>&1 | tee work/framework.log
           echo "robovm exit=${PIPESTATUS[0]}"
           LIB="work/ios-framework/McAotFramework.framework/McAotFramework"
           if [ ! -f "$LIB" ]; then echo "framework missing"; exit 1; fi

@@ -1,0 +1,16 @@
+<config>
+    <executableName>McAotFramework</executableName>
+    <mainClass>dev.mcjava.spike.AotMain</mainClass>
+    <!--
+      Single-VM image: the game bootstrap (AotMain) plus the launcher value
+      classes it uses. MinecraftAccount.<clinit> is patched out of launcher.jar
+      because it calls System.loadLibrary.
+    -->
+    <forceLinkClasses>
+        <pattern>dev.mcjava.spike.**</pattern>
+        <pattern>com.google.gson.**</pattern>
+        <pattern>net.kdt.pojavlaunch.Tools</pattern>
+        <pattern>net.kdt.pojavlaunch.JMinecraftVersionList*</pattern>
+        <pattern>net.kdt.pojavlaunch.value.**</pattern>
+    </forceLinkClasses>
+</config>
