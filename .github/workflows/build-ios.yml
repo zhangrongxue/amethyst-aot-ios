@@ -12,6 +12,11 @@ on:
         type: boolean
         required: false
         default: false
+      skip_ipa:
+        description: Skip the Amethyst IPA build (AOT only)
+        type: boolean
+        required: false
+        default: false
   push:
     branches: [main]
     paths:
@@ -23,10 +28,6 @@ on:
       - 'scripts/**'
       - '.github/workflows/**'
 
-concurrency:
-  group: ios-build-${{ github.ref }}
-  cancel-in-progress: false
-
 env:
   # Amethyst ships four iOS Java runtimes; the slimmed variant drops them from
   # the second IPA so the artifact stays small.
@@ -36,6 +37,7 @@ jobs:
   # ------------------------------------------------------------------ IPA
   ipa:
     name: Amethyst iOS (unsigned IPA)
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.skip_ipa != true }}
     runs-on: macos-15
     timeout-minutes: 180
     steps:
@@ -142,6 +144,12 @@ jobs:
       - name: Generate robovm.xml forceLinkClasses
         run: |
           bash scripts/gen-robovm-config.sh work/scan-payload/force-link-classes.txt mobivm/robovm.xml
+          echo "--- first bytes (must be 3c 3f 78, i.e. no UTF-8 BOM) ---"
+          head -c 3 mobivm/robovm.xml | od -An -tx1
+          if [ "$(head -c 3 mobivm/robovm.xml | od -An -tx1 | tr -d ' \n')" != "3c3f78" ]; then
+            echo "robovm.xml starts with a BOM; RoboVM cannot parse it" >&2
+            exit 1
+          fi
           sed -n '1,60p' mobivm/robovm.xml
 
       - name: Reference run on the JVM
@@ -151,7 +159,7 @@ jobs:
 
       - name: AOT compile and run with MobiVM
         run: |
-          mvn -B -f mobivm/pom.xml -Drobovm.arch=arm64 robovm:console 2>&1 | tee work/aot-run.txt
+          mvn -B -e -f mobivm/pom.xml -Drobovm.arch=arm64 robovm:console 2>&1 | tee work/aot-run.txt
           grep MCJAVA-AOT work/aot-run.txt | tail -1 | tee work/aot-actual.txt
 
       - name: Compare JVM vs AOT output

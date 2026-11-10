@@ -12,7 +12,7 @@
 #>
 
 function Get-RepoRoot {
-    return (Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path))
+    return (Split-Path -Parent $PSScriptRoot)
 }
 
 function Get-GitHubToken {

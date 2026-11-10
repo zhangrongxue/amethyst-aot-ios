@@ -17,7 +17,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$root = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
+$root = Split-Path -Parent $PSScriptRoot
 $fl = if ([System.IO.Path]::IsPathRooted($ForceLink)) { $ForceLink } else { Join-Path $root $ForceLink }
 $xml = if ([System.IO.Path]::IsPathRooted($RoboVMXml)) { $RoboVMXml } else { Join-Path $root $RoboVMXml }
 
@@ -36,5 +36,10 @@ if ($b -lt 0 -or $e -lt 0 -or $e -lt $b) {
     throw "robovm.xml is missing the GENERATED markers"
 }
 $new = $text.Substring(0, $b + $beginMarker.Length) + "`n" + $block + "`n        " + $text.Substring($e)
-Set-Content -Path $xml -Value $new -Encoding UTF8
+# Windows PowerShell 5.1's `Set-Content -Encoding UTF8` writes a UTF-8 BOM and CRLF.
+# RoboVM parses robovm.xml with SimpleXML: a BOM shows up as U+FEFF before the XML
+# declaration and the compiler fails with a very unhelpful "Failed to read RoboVM
+# config file". Always write BOM-less UTF-8 with LF line endings here.
+$new = $new -replace "`r`n", "`n"
+[System.IO.File]::WriteAllText($xml, $new, (New-Object System.Text.UTF8Encoding($false)))
 Write-Host "[gen-robovm] injected $($patterns.Count) patterns into $xml"
