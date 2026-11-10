@@ -95,3 +95,7 @@ CI 里两个 workflow 的日志 artifact 保留完整证据（`spike-mc-aot-log`
 | F | 换成 `JavaApp/build` 真实运行类路径后：`GLFW.<clinit>` 执行 `System.load(System.getenv("BUNDLE_PATH") + "/AngelAuraAmethyst")` —— Amethyst 把 JNI 原生代码**静态链进主程序**、再加载自身可执行文件来注册符号；随后因 launcher 未设置 `glfw.windowSize` / `UIScreen.maximumFramesPerSecond` 等属性而 NPE | 这正是 AOT 想要的结构：AOT 镜像本身就是「原生库」。探针需预置 launcher 属性；P2 只要让 RoboVM 镜像导出/解析这些 JNI 符号即可 |
 
 **架构结论**：Amethyst 的 iOS 原生方案 = 原生代码静态链进 App 主二进制 + `System.load(自身)`，而不是加载外部 dylib。这对 AOT 非常有利：RoboVM 产出的镜像天然就是单一可执行文件，JNI 符号是否可解析只取决于 RoboVM 的 `Runtime.nativeLoad`/符号导出机制（P2 验证点）。
+
+| G | 加上 Java 8 shim（`ThreadLocal.withInitial` → `Compat.threadLocalWithInitial`）后：ThreadLocal/回调/Pointer 初始化全部推进，最终在 `MemoryUtil.<clinit>` 撞上 `UnsatisfiedLinkError: org.lwjgl.system.jni.JNINativeInterface.nNewDirectByteBuffer(JJ)` | **这是第一个真正的 JNI 原生调用**，也是 P1 的终点。该符号正是 Pojav `liblwjgl.dylib` 的导出（`Java_org_lwjgl_system_jni_*` 50 个 + `JNI.invoke*` 1605 个） |
+
+**P1 完成定义（已达成）**：MC 1.8.9 的 AOT 镜像能在 macOS 上跑完启动器层初始化与 MC 主路径，直到第一个 JNI 原生调用点，且失败符号可定位到 Amethyst 已有原生库的导出。P2 的工作因此变得具体：把该原生库以 macOS/iOS 静态或动态形式接进 AOT 镜像，让 `JNINativeInterface`/`JNI.call*` 解析成功。
