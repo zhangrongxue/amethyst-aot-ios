@@ -56,9 +56,12 @@ jobs:
 
       - name: Build Java 8 API extras (streams/function missing from RoboVM rt)
         run: |
-          curl -fSL --retry 3 -o work/jdk8.zip \
-            'https://api.adoptium.net/v3/binary/latest/8/ga/macos/x64/jdk/hotspot/normal/eclipse'
-          unzip -q work/jdk8.zip -d work/jdk8
+          # JDK 8 has no macOS arm64 build; we only need rt.jar (class files are
+          # architecture independent), so the mac/x64 tarball is fine.
+          curl -fSL --retry 3 -o work/jdk8.tar.gz \
+            'https://api.adoptium.net/v3/binary/latest/8/ga/mac/x64/jdk/hotspot/normal/eclipse'
+          mkdir -p work/jdk8
+          tar xzf work/jdk8.tar.gz -C work/jdk8
           RT=$(find work/jdk8 -name rt.jar | head -1)
           echo "rt.jar: $RT"
           mkdir -p work/extras
