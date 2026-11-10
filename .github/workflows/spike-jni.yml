@@ -1,0 +1,74 @@
+name: Spike JNI
+
+# Answers one question: can a MobiVM/RoboVM AOT image call a native method that
+# lives in a statically linked library (JNI_OnLoad + Java_* exports)?
+# This decides whether the iOS LWJGL/OpenAL JNI libs can back an AOT Minecraft.
+on:
+  workflow_dispatch:
+
+jobs:
+  jni:
+    name: Static JNI smoke test
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Download MobiVM dist
+        run: |
+          mkdir -p work/robovm
+          curl -fSL --retry 3 -o work/robovm-dist.tar.gz \
+            https://repo1.maven.org/maven2/com/mobidevelop/robovm/robovm-dist/2.3.23/robovm-dist-2.3.23.tar.gz
+          tar xzf work/robovm-dist.tar.gz -C work/robovm --strip-components=1
+          ls work/robovm/lib | head
+
+      - name: Build static JNI library
+        run: |
+          SDK=$(xcrun --show-sdk-path)
+          clang -c -arch arm64 -isysroot "$SDK" \
+            -I"$JAVA_HOME/include" -I"$JAVA_HOME/include/darwin" \
+            spikes/jni/native/spikejni.c -o spikes/jni/native/spikejni.o
+          ar rcs spikes/jni/native/libspikejni.a spikes/jni/native/spikejni.o
+          ls -la spikes/jni/native/
+          nm -g spikes/jni/native/libspikejni.a | grep -E 'JNI_OnLoad|Java_' | head
+
+      - name: Compile spike class
+        run: |
+          mkdir -p work/jni-classes
+          javac --release 8 -encoding UTF-8 -d work/jni-classes spikes/jni/src/dev/mcjava/spike/JniMain.java
+
+      - name: AOT build + run
+        run: |
+          set +e
+          mkdir -p work/jni-out
+          work/robovm/bin/robovm \
+            -config spikes/jni/robovm.xml \
+            -cp work/jni-classes \
+            -o jnitest -d work/jni-out \
+            -os macosx -arch arm64 -target console -verbose \
+            dev.mcjava.spike.JniMain 2>&1 | tee work/jni-build.log
+          echo "build exit=${PIPESTATUS[0]}"
+          ls -la work/jni-out
+          echo "=== running the AOT binary ==="
+          if [ -x work/jni-out/jnitest ]; then
+            work/jni-out/jnitest 2>&1 | tee work/jni-run.log
+            echo "run exit=${PIPESTATUS[0]}"
+          else
+            echo "no binary produced"
+          fi
+
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: spike-jni-log
+          path: |
+            work/jni-build.log
+            work/jni-run.log
+            spikes/jni/native/libspikejni.a
+          if-no-files-found: warn
