@@ -136,11 +136,12 @@ jobs:
           echo "robovm exit=${PIPESTATUS[0]}"
           ls -la "$OUTDIR" || true
 
-      - name: AOT build for iOS (link prebuilt Amethyst dylibs)
+      - name: AOT build for iOS + fix dylib names + package unsigned IPA
         if: ${{ github.event.inputs.ios_link != 'false' }}
         run: |
           set +e
           IOS_OUT="$PWD/work/ios-out"
+          rm -rf "$IOS_OUT"
           mkdir -p "$IOS_OUT"
           FW="$PWD/Natives/resources/Frameworks"
           echo "iphoneos sdk: $(xcrun --sdk iphoneos --show-sdk-version)"
@@ -155,20 +156,57 @@ jobs:
             -verbose \
             dev.mcjava.spike.McMain 2>&1 | tee work/ios-link.log
           echo "robovm ios exit=${PIPESTATUS[0]}"
-          echo "=== produced bundle ==="
-          find "$IOS_OUT" -maxdepth 4 | head -40
-          BIN=$(find "$IOS_OUT" -type f -name 'mc-aot-ios' | head -1)
-          if [ -n "$BIN" ]; then
-            echo "binary: $BIN"
-            file "$BIN"
-            echo "=== LC_LOAD_DYLIB ==="
-            otool -L "$BIN" | head -30
-            echo "=== build version ==="
-            vtool -show-build "$BIN" || true
-            ls -la "$(dirname "$BIN")/Frameworks" 2>/dev/null || true
-          else
-            echo "no iOS binary produced"
-          fi
+          ls -la "$IOS_OUT" | head -20
+
+          BIN="$IOS_OUT/mc-aot-ios"
+          if [ ! -x "$BIN" ]; then echo "no iOS binary produced"; exit 0; fi
+          file "$BIN"
+          echo "=== LC_LOAD_DYLIB before fix ==="
+          otool -L "$BIN" | head -20
+
+          mkdir -p "$IOS_OUT/Frameworks"
+          for lib in liblwjgl.dylib liblwjgl_opengl.dylib; do
+            [ -f "$FW/$lib" ] && cp "$FW/$lib" "$IOS_OUT/Frameworks/$lib"
+          done
+
+          # Rewrite every build-time path dependency to @rpath/<basename>.
+          fix_deps() {
+            local f="$1"
+            otool -L "$f" | tail -n +2 | awk '{print $1}' | while read -r dep; do
+              case "$dep" in
+                bin/libs/native/macos/*)
+                  base=$(basename "$dep")
+                  echo "  $f: $dep -> @rpath/$base"
+                  install_name_tool -change "$dep" "@rpath/$base" "$f"
+                  ;;
+              esac
+            done
+          }
+          fix_deps "$BIN"
+          for lib in "$IOS_OUT"/Frameworks/*.dylib; do
+            [ -f "$lib" ] || continue
+            install_name_tool -id "@rpath/$(basename "$lib")" "$lib"
+            fix_deps "$lib"
+          done
+          echo "=== LC_LOAD_DYLIB after fix ==="
+          otool -L "$BIN" | head -20
+          for lib in "$IOS_OUT"/Frameworks/*.dylib; do
+            [ -f "$lib" ] && otool -L "$lib" | head -10
+          done
+
+          # install_name_tool invalidates signatures; re-sign ad-hoc.
+          for lib in "$IOS_OUT"/Frameworks/*.dylib; do
+            [ -f "$lib" ] && codesign -f -s - "$lib" 2>/dev/null
+          done
+          codesign -f -s - "$BIN" 2>/dev/null || true
+
+          echo "=== packaging unsigned IPA ==="
+          PKG="$PWD/work/ios-pkg"
+          rm -rf "$PKG"; mkdir -p "$PKG/Payload"
+          cp -R "$IOS_OUT" "$PKG/Payload/AmethystAOT.app"
+          ( cd "$PKG" && zip -ry "$PWD/work/amethyst-aot-unsigned.ipa" Payload > /dev/null )
+          ls -la work/amethyst-aot-unsigned.ipa
+          unzip -l work/amethyst-aot-unsigned.ipa | head -20
 
       - name: Run the AOT binary (headless probe)
         if: always()
