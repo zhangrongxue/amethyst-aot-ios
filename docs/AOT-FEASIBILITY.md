@@ -121,3 +121,7 @@ CI 里两个 workflow 的日志 artifact 保留完整证据（`spike-mc-aot-log`
 | L | P3 第一次真实集成：新增 `Natives/AOTBridge.m`（constructor 延迟 6s 后用 `JNI_GetCreatedJavaVMs` 拿 JavaVM、`FindClass("dev/mcjava/spike/McMain")` 调 `main`）、CMake 条件链接 `McAotFramework.framework`（`AOT_FRAMEWORK_DIR`）、Makefile `AOT=1` 时把 framework 拷进 app 的 Frameworks；新增 `build-ios-aot.yml` 一次构建「AOT framework + 真实 Amethyst」。**构建成功**：完整 IPA 208 MB / 瘦身 50 MB，`Payload/AngelAuraAmethyst.app/Frameworks/McAotFramework.framework` 已包含，`verify_ipa.py` 两个 IPA 均 PASS | **P3 的工程接线打通**。下一步：真机侧载跑一次，看 AOTBridge 的 `[AOT]` 日志与首个失败点；预计会卡在 GLFW 窗口/GL 上下文（宿主 UIKit 桥尚未对接） |
 
 **待验证（真机）**：安装该 IPA 后看 Console 日志 `[AOT] will enter AOT image...` / `[AOT] invoking McMain.main` / 第一个异常。这条日志链会告诉我们 RoboVM VM 是否在 Amethyst 进程里成功启动、JNI 符号是否解析。
+
+| M | P3 产物校验：完整 IPA 的 `Frameworks/` 里已有 `McAotFramework.framework`（36 MB），主二进制 `LC_LOAD_DYLIB @rpath/McAotFramework`、rpath `@executable_path/Frameworks`。启动顺序因此是：dyld 加载框架 → frameworksupport 构造器 `JNI_CreateJavaVM` → AOTBridge 6 秒后 `JNI_GetCreatedJavaVMs` + `FindClass("dev/mcjava/spike/McMain")` + `main`。产物已存 `dist/aot-spike/prototype/`（含 SHA-256、安装与日志抓取说明） | 只剩**真机运行时验证**：装包后抓 `[AOT]` 日志链，确认 VM 创建与 JNI 解析，再定位首个 GL/窗口失败点。GL 桥接是最后一块 |
+
+**当前状态**：从「可行性 spike」到「可安装的集成原型」已全部完成；剩余工作是真机日志驱动的一轮修复（GLFW/GL 上下文对接宿主 UIKit）。
