@@ -45,15 +45,6 @@ jobs:
           ls work/robovm
           ls work/robovm/lib | head
 
-      - name: Compile spike entry class
-        run: |
-          mkdir -p work/spike-classes
-          javac --release 8 -encoding UTF-8 \
-            -cp work/mc/client.jar \
-            -d work/spike-classes \
-            spikes/mc-aot/src/dev/mcjava/spike/McMain.java
-          ls work/spike-classes/dev/mcjava/spike
-
       - name: Build Java 8 API extras (streams/function missing from RoboVM rt)
         run: |
           # JDK 8 has no macOS arm64 build; we only need rt.jar (class files are
@@ -71,6 +62,15 @@ jobs:
           jar cf work/java8-extras.jar -C work/extras .
           ls -la work/java8-extras.jar
           unzip -l work/java8-extras.jar | tail -3
+
+      - name: Compile spike payload (entry + Java 8 compat helpers)
+        run: |
+          mkdir -p work/spike-classes
+          javac --release 8 -encoding UTF-8 \
+            -cp "work/mc/client.jar:work/java8-extras.jar" \
+            -d work/spike-classes \
+            $(find spikes/mc-aot/src -name '*.java')
+          find work/spike-classes -name '*.class' | head
 
       - name: Build Amethyst JavaApp (real runtime classpath)
         run: |
@@ -95,7 +95,12 @@ jobs:
             dev.mcjava.patch.AotPatch \
             "$LWJGL_JAR" work/lwjgl-patched.jar \
             org.lwjgl.system.Library loadSystem
-          unzip -p work/lwjgl-patched.jar org/lwjgl/system/Library.class | wc -c
+          # Backport Java 8 APIs that RoboVM's runtime lacks (ThreadLocal.withInitial, ...)
+          javac --release 8 -encoding UTF-8 -cp work/asm.jar:work/asm-tree.jar \
+            -d work/patch-classes tools/aot-patch/src/dev/mcjava/patch/Java8Shim.java
+          java -cp work/patch-classes:work/asm.jar:work/asm-tree.jar \
+            dev.mcjava.patch.Java8Shim work/lwjgl-patched.jar work/lwjgl-shim.jar
+          unzip -p work/lwjgl-shim.jar org/lwjgl/system/MemoryUtil.class | wc -c
 
       - name: AOT compile MC closure (expected to fail; we mine the errors)
         run: |
@@ -104,7 +109,7 @@ jobs:
           # the custom android/util + net.kdt classes, build/lwjgl.jar has the custom
           # GLFW/Sys) plus the vanilla MC libraries minus log4j-core.
           APP_JARS="$(ls JavaApp/build/*.jar 2>/dev/null | grep -v '/lwjgl\.jar$' | tr '\n' ':')$(ls JavaApp/libs/others/*.jar 2>/dev/null | tr '\n' ':')"
-          CP="work/spike-classes:work/lwjgl-patched.jar:$APP_JARS$(ls work/mc/*.jar work/mc/libs/*.jar 2>/dev/null | grep -v '/lwjgl' | grep -v 'log4j-core' | tr '\n' ':')"
+          CP="work/spike-classes:work/lwjgl-shim.jar:$APP_JARS$(ls work/mc/*.jar work/mc/libs/*.jar 2>/dev/null | grep -v '/lwjgl' | grep -v 'log4j-core' | tr '\n' ':')"
           # Append the Java 8 extras to the boot classpath: RoboVM rt wins for the
           # classes it has, the extras fill java.util.function / java.util.stream.
           BCP="work/robovm/lib/robovm-rt.jar:work/java8-extras.jar"
