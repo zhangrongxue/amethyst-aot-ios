@@ -26,6 +26,11 @@ SLIMMED ?= 0
 # Check if slimmed should be built, and additionally skip normal build
 SLIMMED_ONLY ?= 0
 
+# RoboVM AOT integration (off by default; requires McAotFramework.framework)
+AOT ?= 0
+AOT_FRAMEWORK_DIR ?= $(SOURCEDIR)/work/ios-framework
+AOT_CMAKE_FLAGS := $(if $(filter 1,$(AOT)),-DAOT_FRAMEWORK_DIR="$(AOT_FRAMEWORK_DIR)",)
+
 # If not in a GitHub repository, default to these
 # so that compiling doesn't fail
 ifeq (,$(BRANCH))
@@ -295,6 +300,7 @@ native: dep_mg
 		-DCONFIG_BRANCH="$(BRANCH)" \
 		-DCONFIG_COMMIT="$(COMMIT)" \
 		-DCONFIG_RELEASE=$(RELEASE) \
+		$(AOT_CMAKE_FLAGS) \
 		..
 
 	cmake --build $(WORKINGDIR) --config $(CMAKE_BUILD_TYPE) -j$(JOBS)
@@ -371,6 +377,9 @@ payload: native dep_mg java jre assets
 	cp -R $(SOURCEDIR)/Natives/resources/en.lproj/LaunchScreen.storyboardc $(WORKINGDIR)/AngelAuraAmethyst.app/Base.lproj/ || exit 1
 	cp -R $(SOURCEDIR)/Natives/resources/* $(WORKINGDIR)/AngelAuraAmethyst.app/ || exit 1
 	cp $(WORKINGDIR)/*.dylib $(WORKINGDIR)/AngelAuraAmethyst.app/Frameworks/ || exit 1
+	if [ '$(AOT)' = '1' ] && [ -d '$(AOT_FRAMEWORK_DIR)/McAotFramework.framework' ]; then \
+		cp -R '$(AOT_FRAMEWORK_DIR)/McAotFramework.framework' $(WORKINGDIR)/AngelAuraAmethyst.app/Frameworks/ || exit 1; \
+	fi; \
 	cp -R $(SOURCEDIR)/JavaApp/libs/others/* $(WORKINGDIR)/AngelAuraAmethyst.app/libs/ || exit 1
 	cp $(SOURCEDIR)/JavaApp/build/*.jar $(WORKINGDIR)/AngelAuraAmethyst.app/libs/ || exit 1
 	cp -R $(SOURCEDIR)/JavaApp/libs/caciocavallo/* $(WORKINGDIR)/AngelAuraAmethyst.app/libs_caciocavallo || exit 1

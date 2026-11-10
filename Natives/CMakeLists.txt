@@ -99,6 +99,7 @@ add_executable(AngelAuraAmethyst
   main.m
   main_hook.m
   JavaLauncher.m
+  AOTBridge.m
   external/fishhook/fishhook.c
   UIKit+hook.m
 
@@ -203,6 +204,14 @@ target_link_libraries(AngelAuraAmethyst
   "-framework WebKit"
   "-weak_framework SafariServices"
 )
+if(AOT_FRAMEWORK_DIR)
+  message(STATUS "Linking RoboVM AOT framework from ${AOT_FRAMEWORK_DIR}")
+  target_link_libraries(AngelAuraAmethyst
+    "-F${AOT_FRAMEWORK_DIR}"
+    "-framework McAotFramework"
+  )
+  target_compile_definitions(AngelAuraAmethyst PRIVATE AOT_ALWAYS=1)
+endif()
 set_target_properties(AngelAuraAmethyst PROPERTIES
   MACOSX_BUNDLE TRUE
   MACOSX_FRAMEWORK_IDENTIFIER org.cmake.ExecutableTarget

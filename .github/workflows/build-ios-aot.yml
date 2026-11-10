@@ -1,0 +1,150 @@
+name: iOS build with AOT framework (prototype)
+
+# P3 prototype: build the RoboVM-AOT Minecraft framework, then build the real
+# Amethyst app with that framework linked and a bridge that enters the AOT image
+# at launch. This is a prototype build, not a release artifact.
+on:
+  workflow_dispatch:
+    inputs:
+      mc_version:
+        description: Minecraft version used for the AOT image
+        required: false
+        default: '1.8.9'
+
+env:
+  SLIMMED: '1'
+
+jobs:
+  build:
+    name: Amethyst + AOT framework
+    runs-on: macos-15
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Select Xcode
+        run: |
+          ls -d /Applications/Xcode*.app 2>/dev/null || true
+          PICK=""
+          for app in $(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -V -r); do PICK="$app"; break; done
+          if [ -n "$PICK" ]; then sudo xcode-select -s "$PICK/Contents/Developer"; fi
+          xcodebuild -version
+          xcrun --sdk iphoneos --show-sdk-version
+
+      - name: Install build dependencies
+        run: |
+          brew install make ldid
+          brew install --cask temurin@8
+
+      - name: Export build environment
+        run: |
+          echo "SDKPATH=$(xcrun --sdk iphoneos --show-sdk-path)" >> $GITHUB_ENV
+          echo "BOOTJDK=$(/usr/libexec/java_home -v 1.8)/bin" >> $GITHUB_ENV
+          echo "PATH=/opt/homebrew/bin:$PATH" >> $GITHUB_ENV
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Fetch Minecraft jars
+        env:
+          MC_VERSION: ${{ github.event.inputs.mc_version || '1.8.9' }}
+        run: python3 scripts/fetch_minecraft.py --version "$MC_VERSION" --out work/mc --os osx --arch arm64
+
+      - name: Download MobiVM dist
+        run: |
+          mkdir -p work/robovm
+          curl -fSL --retry 3 -o work/robovm-dist.tar.gz \
+            https://repo1.maven.org/maven2/com/mobidevelop/robovm/robovm-dist/2.3.23/robovm-dist-2.3.23.tar.gz
+          tar xzf work/robovm-dist.tar.gz -C work/robovm --strip-components=1
+
+      - name: Build Java 8 API extras
+        run: |
+          curl -fSL --retry 3 -o work/jdk8.tar.gz \
+            'https://api.adoptium.net/v3/binary/latest/8/ga/mac/x64/jdk/hotspot/normal/eclipse'
+          mkdir -p work/jdk8 work/extras
+          tar xzf work/jdk8.tar.gz -C work/jdk8
+          RT=$(find work/jdk8 -name rt.jar | head -1)
+          ( cd work/extras && unzip -q "$OLDPWD/$RT" 'java/util/function/*' 'java/util/stream/*' 'java/util/Spliterator*' 'java/util/Optional*' 2>/dev/null || true )
+          jar cf work/java8-extras.jar -C work/extras .
+
+      - name: Build Amethyst JavaApp
+        run: make -C JavaApp -j"$(sysctl -n hw.ncpu)" BOOTJDK="$BOOTJDK"
+
+      - name: Prepare LWJGL (loadSystem no-op + Java 8 shim)
+        run: |
+          curl -fSL --retry 3 -o work/asm.jar https://repo1.maven.org/maven2/org/ow2/asm/asm/9.7/asm-9.7.jar
+          curl -fSL --retry 3 -o work/asm-tree.jar https://repo1.maven.org/maven2/org/ow2/asm/asm-tree/9.7/asm-tree-9.7.jar
+          mkdir -p work/patch-classes
+          javac --release 8 -encoding UTF-8 -cp work/asm.jar:work/asm-tree.jar \
+            -d work/patch-classes tools/aot-patch/src/dev/mcjava/patch/AotPatch.java \
+            tools/aot-patch/src/dev/mcjava/patch/Java8Shim.java
+          java -cp work/patch-classes:work/asm.jar:work/asm-tree.jar \
+            dev.mcjava.patch.AotPatch JavaApp/build/lwjgl.jar work/lwjgl-patched.jar \
+            org.lwjgl.system.Library loadSystem
+          java -cp work/patch-classes:work/asm.jar:work/asm-tree.jar \
+            dev.mcjava.patch.Java8Shim work/lwjgl-patched.jar work/lwjgl-shim.jar
+
+      - name: Build AOT framework (MC 1.8.9)
+        run: |
+          set +e
+          mkdir -p work/spike-classes work/ios-framework
+          javac --release 8 -encoding UTF-8 -cp "work/mc/client.jar:work/java8-extras.jar" \
+            -d work/spike-classes $(find spikes/mc-aot/src -name '*.java')
+          APP_JARS="$(ls JavaApp/build/*.jar 2>/dev/null | grep -v '/lwjgl\.jar$' | tr '\n' ':')$(ls JavaApp/libs/others/*.jar 2>/dev/null | tr '\n' ':')"
+          CP="work/spike-classes:work/lwjgl-shim.jar:$APP_JARS$(ls work/mc/*.jar work/mc/libs/*.jar 2>/dev/null | grep -v '/lwjgl' | grep -v 'log4j-core' | tr '\n' ':')"
+          BCP="work/robovm/lib/robovm-rt.jar:work/java8-extras.jar"
+          FW="$PWD/Natives/resources/Frameworks"
+          work/robovm/bin/robovm \
+            -config spikes/mc-aot/robovm.xml \
+            -cp "$CP" -bcp "$BCP" \
+            -libs "$FW/liblwjgl.dylib:$FW/liblwjgl_opengl.dylib" \
+            -plist spikes/mc-aot/Info-framework.plist \
+            -o McAotFramework -d "$PWD/work/ios-framework" \
+            -os ios -arch arm64 -target framework -skipsign -verbose \
+            dev.mcjava.spike.McMain 2>&1 | tee work/framework.log
+          echo "robovm exit=${PIPESTATUS[0]}"
+          LIB="work/ios-framework/McAotFramework.framework/McAotFramework"
+          if [ ! -f "$LIB" ]; then echo "framework missing"; exit 1; fi
+          file "$LIB"
+          for dep in $(otool -L "$LIB" | tail -n +2 | awk '{print $1}' | grep '^bin/libs/native/macos/'); do
+            install_name_tool -change "$dep" "@rpath/$(basename "$dep")" "$LIB"
+          done
+          install_name_tool -id "@rpath/McAotFramework" "$LIB" 2>/dev/null || true
+          codesign -f -s - "$LIB" 2>/dev/null || true
+          otool -L "$LIB" | head -15
+
+      - name: Build Amethyst with AOT framework
+        run: |
+          set -o pipefail
+          gmake -j"$(sysctl -n hw.ncpu)" dsym package PLATFORM=2 SLIMMED=1 AOT=1 AOT_FRAMEWORK_DIR="$PWD/work/ios-framework" 2>&1 | tee work/amethyst-aot-build.log
+          ls -la artifacts/ || true
+          python3 scripts/verify_ipa.py artifacts/*.ipa --json artifacts/ipa-report.json | tee work/ipa-verify.txt
+
+      - name: Verify AOT framework is inside the IPA
+        if: always()
+        run: |
+          IPA=$(ls artifacts/*.ipa 2>/dev/null | head -1)
+          if [ -n "$IPA" ]; then
+            unzip -l "$IPA" | grep -E 'McAotFramework|Frameworks/' | head -20
+          else
+            echo "no IPA"
+          fi
+
+      - name: Upload prototype artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: amethyst-aot-prototype
+          path: |
+            artifacts/*.ipa
+            artifacts/ipa-report.json
+            work/framework.log
+            work/amethyst-aot-build.log
+            work/ipa-verify.txt
+            work/ios-framework/McAotFramework.framework/McAotFramework
+          if-no-files-found: warn
