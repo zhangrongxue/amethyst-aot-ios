@@ -4,15 +4,23 @@
     <!--
       Single-VM image: the game bootstrap (AotMain) plus the launcher value
       classes it uses. MinecraftAccount.<clinit> is patched out of launcher.jar
-      because it calls System.loadLibrary.
+      because it calls System.loadLibrary; System.load/loadLibrary calls in the
+      shimmed jars are rewritten to Compat no-ops.
+
+      The broad patterns below keep reflection / registry lookups resolvable at
+      runtime: AOT images cannot load classes that were not linked.
     -->
     <forceLinkClasses>
         <pattern>dev.mcjava.spike.**</pattern>
+        <pattern>dev.mcjava.aot.**</pattern>
         <pattern>com.google.gson.**</pattern>
         <pattern>net.kdt.pojavlaunch.Tools</pattern>
         <pattern>net.kdt.pojavlaunch.JMinecraftVersionList*</pattern>
         <pattern>net.kdt.pojavlaunch.value.**</pattern>
         <pattern>net.kdt.pojavlaunch.uikit.**</pattern>
-        <pattern>org.lwjgl.glfw.**</pattern>
+        <pattern>org.lwjgl.**</pattern>
+        <pattern>net.minecraft.**</pattern>
+        <pattern>com.mojang.**</pattern>
+        <pattern>org.apache.logging.log4j.**</pattern>
     </forceLinkClasses>
 </config>

@@ -31,4 +31,19 @@ public final class Compat {
 
     /** Replacement for {@code APIUtil.apiGetFunctionAddressOptional(SharedLibrary, String)}. */
     public static native long addressOptional(Object provider, String name);
+
+    /**
+     * Replacement for {@code System.load(String)}: RoboVM cannot dlopen a JNI
+     * library, and it throws UnsupportedOperationException rather than the
+     * UnsatisfiedLinkError the Amethyst code expects. No-op keeps <clinit>
+     * running; the native entry points are resolved through {@link #addressOf}.
+     */
+    public static void loadNoop(String path) {
+        System.out.println("[Compat] skipping System.load(" + path + ")");
+    }
+
+    /** Replacement for {@code System.loadLibrary(String)}. */
+    public static void loadLibraryNoop(String name) {
+        System.out.println("[Compat] skipping System.loadLibrary(" + name + ")");
+    }
 }

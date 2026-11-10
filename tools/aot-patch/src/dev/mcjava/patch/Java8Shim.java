@@ -51,6 +51,18 @@ public final class Java8Shim {
                     "dev/mcjava/aot/Compat", "addressOptional",
                     "(Ljava/lang/Object;Ljava/lang/String;)J"
             },
+            {
+                    "java/lang/System", "load",
+                    "(Ljava/lang/String;)V",
+                    "dev/mcjava/aot/Compat", "loadNoop",
+                    "(Ljava/lang/String;)V"
+            },
+            {
+                    "java/lang/System", "loadLibrary",
+                    "(Ljava/lang/String;)V",
+                    "dev/mcjava/aot/Compat", "loadLibraryNoop",
+                    "(Ljava/lang/String;)V"
+            },
     };
 
     public static void main(String[] args) throws Exception {
