@@ -134,3 +134,7 @@ CI 里两个 workflow 的日志 artifact 保留完整证据（`spike-mc-aot-log`
 | P | **单 VM 落地（构建级）**：新增 `spikes/mc-aot/src/dev/mcjava/spike/AotMain.java`（读 `GAME_DIR`/版本 id → `Tools.getVersionInfo` → `Tools.getMinecraftArgs` → 直接调 `net.minecraft.client.main.Main.main`，绕开 `Tools.launchMinecraft` 的 classloader）、`Natives/AOTBridge.m` 改为 `AOTBridgeLaunchGame(user, version)` 并把 `runtimeJavaVMPtr` 指向 RoboVM VM、`JavaLauncher.m` 在 `AOT_ALWAYS` 下跳过 `JLI_Launch`；`MinecraftAccount.<clinit>` 用 AotPatch 清空（去 `System.loadLibrary`）。`build-ios-aot.yml` 产物：完整 208 MB / 瘦身 50 MB，verify 均 PASS | **单一 VM 的 AOT 启动链路已闭环并可构建**。剩余：宿主 App 的 JNI 函数（`CallbackBridge_*`、`UIKit_showError` 等，靠 `JNI_OnLoad`+`RegisterNatives` 注册）在 RoboVM 下不会自动注册，需要做「注册或 Compat 转发」；以及真机 GL 验证 |
 
 **下一步（按优先级）**：①把 App 侧 JNI 注册搬到 RoboVM（或 Java 层经 `Compat.addressOf` 转发到 `CallbackBridge_*`）→ ②真机装包看 `[AOT] invoking AotMain.main` 日志 → ③GL 上下文跑起来后逐项修 MC 崩溃点。
+
+| Q | **宿主 JNI 注册桥**：`Natives/AOTBridge.m` 增加 Mach-O symtab 符号解析（`host_symbol`）与 `RegisterNatives` 表——注册 `CallbackBridge.nativeClipboard/nativeSetGrabbing`、`UIKit.showError`、GLFW 的 `nglfwSet*Callback`/`nglfwSetShowingWindow`/`nglfwGetCursorPos(A)`/`glfwSetCursorPos`；设置 `runtimeJavaVMPtr/runtimeJNIEnvPtr` 后调用宿主 `JNI_OnLoadGLFW` 填充 GLFW 全局（`vmGlfwClass`、输入缓冲区）。构建成功：完整 IPA 210.3 MB / 瘦身 52.2 MB，verify PASS | 内置 native 解析不再依赖 RoboVM 的 dlsym 路径。下一步：真机日志验证（装包 → 按 Play → 看 `[AOT] registered N/M host natives` 与后续 MC 启动日志），再逐项修 GL/崩溃 |
+
+**到这里 AOT 侧的主体工程已完成**：AOT 编译真实 MC、JNI/GL 原生函数解析、framework 嵌入、单 VM 启动、宿主 JNI 注册。剩下的都是**运行时联调**，必须依赖真机日志驱动。
