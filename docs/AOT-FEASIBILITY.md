@@ -109,3 +109,7 @@ CI 里两个 workflow 的日志 artifact 保留完整证据（`spike-mc-aot-log`
 **P2 收尾清单**：① Frameworks 拷贝 + install_name 修正；② 让 AOT app 真正接管 GLFW 窗口/GL 上下文（对接 Amethyst 的 UIKit/EGL 桥）；③ 在真机（TrollStore/侧载）上验证「不挂调试器、不授权 JIT 也能启动」。
 
 **当前结论**：免 JIT 路线的技术不确定性已基本消除——编译器、JNI、iOS 链接三段都实测通过；剩下是工程集成（install name、上下文注入、嵌入方式）。
+
+| J | 完成 Frameworks 拷贝 + `install_name_tool` 修正（主二进制与两个 dylib 的依赖全部改成 `@rpath/...`，dylib 的 `LC_ID` 也改成 `@rpath/...`），重新 ad-hoc 签名，并打包出 **`amethyst-aot-unsigned.ipa`**（15.7 MB，`Payload/AmethystAOT.app`，含 arm64 主二进制 + 两个 Frameworks dylib + 全部 jar） | **可侧载的 iOS AOT 脚手架产物已落地**（`dist/aot-spike/`）。校验：主二进制 `LC_LOAD_DYLIB @rpath/liblwjgl*.dylib`，rpath `@executable_path/Frameworks`，两个 dylib 的 id 均为 `@rpath/...`。仍不可玩：AOT 镜像缺 App 侧 UIKit/GLFW 原生层，P3 嵌入 Amethyst 后解决 |
+
+**P3 入口**：把 AOT 镜像以 framework/dylib 形式嵌进真正的 Amethyst 主程序（保留其 Obj-C/C 原生层与 UIKit），让自定义 GLFW 的 `System.load(自身)` 能解析到 App 侧 JNI 符号，再由 Objective-C 侧初始化 RoboVM 运行时并启动 `McMain`。
