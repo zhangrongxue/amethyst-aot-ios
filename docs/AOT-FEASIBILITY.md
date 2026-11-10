@@ -130,3 +130,7 @@ CI 里两个 workflow 的日志 artifact 保留完整证据（`spike-mc-aot-log`
 | O | GL 函数解析链路修复后重建 Amethyst+AOT（run `42791738550`）成功：framework 内加入 `libcompat-ios.a`（arm64 iPhoneOS，Mach-O symtab 符号解析），`build-ios-aot.yml` 产物仍 PASS | 待下载产物做符号级校验；真机日志仍是最终判据 |
 
 **架构决策倾向**：走 **单 VM**——把 Amethyst 的启动器 Java 层与 MC 一起 AOT，宿主 Obj-C UI 通过 JNI 调 RoboVM VM；这样 GLFW 窗口/输入/回调都在同一个 VM 里，才能「可以玩」。双 VM 方案只适合做演示，不适合可玩版本。
+
+| P | **单 VM 落地（构建级）**：新增 `spikes/mc-aot/src/dev/mcjava/spike/AotMain.java`（读 `GAME_DIR`/版本 id → `Tools.getVersionInfo` → `Tools.getMinecraftArgs` → 直接调 `net.minecraft.client.main.Main.main`，绕开 `Tools.launchMinecraft` 的 classloader）、`Natives/AOTBridge.m` 改为 `AOTBridgeLaunchGame(user, version)` 并把 `runtimeJavaVMPtr` 指向 RoboVM VM、`JavaLauncher.m` 在 `AOT_ALWAYS` 下跳过 `JLI_Launch`；`MinecraftAccount.<clinit>` 用 AotPatch 清空（去 `System.loadLibrary`）。`build-ios-aot.yml` 产物：完整 208 MB / 瘦身 50 MB，verify 均 PASS | **单一 VM 的 AOT 启动链路已闭环并可构建**。剩余：宿主 App 的 JNI 函数（`CallbackBridge_*`、`UIKit_showError` 等，靠 `JNI_OnLoad`+`RegisterNatives` 注册）在 RoboVM 下不会自动注册，需要做「注册或 Compat 转发」；以及真机 GL 验证 |
+
+**下一步（按优先级）**：①把 App 侧 JNI 注册搬到 RoboVM（或 Java 层经 `Compat.addressOf` 转发到 `CallbackBridge_*`）→ ②真机装包看 `[AOT] invoking AotMain.main` 日志 → ③GL 上下文跑起来后逐项修 MC 崩溃点。
