@@ -144,7 +144,14 @@ public final class Java8Shim {
         if (count == 0) {
             return new Object[]{bytes, 0};
         }
-        ClassWriter cw = new ClassWriter(ClassWriter.COMPUTE_MAXS);
+        ClassWriter cw = new ClassWriter(ClassWriter.COMPUTE_MAXS | ClassWriter.COMPUTE_FRAMES) {
+            @Override
+            protected String getCommonSuperClass(String type1, String type2) {
+                // The patcher runs without the game classpath, so avoid ASM's
+                // class-hierarchy lookups and fall back to Object.
+                return "java/lang/Object";
+            }
+        };
         cn.accept(cw);
         return new Object[]{cw.toByteArray(), count};
     }
