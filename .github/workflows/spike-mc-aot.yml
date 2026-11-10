@@ -75,6 +75,27 @@ jobs:
           echo "robovm exit=${PIPESTATUS[0]}"
           ls -la "$OUTDIR" || true
 
+      - name: Run the AOT binary (headless probe)
+        if: always()
+        run: |
+          BIN="$PWD/work/spike-out/mc-aot-spike"
+          if [ ! -x "$BIN" ]; then
+            echo "no AOT binary produced"
+            ls -la work/spike-out 2>/dev/null || true
+            exit 0
+          fi
+          mkdir -p work/game work/assets
+          set +e
+          timeout 120 "$BIN" \
+            --gameDir "$PWD/work/game" \
+            --assetsDir "$PWD/work/assets" \
+            --assetIndex 1.8 \
+            --uuid 0 --accessToken 0 --username dev --version 1.8.9 \
+            2>&1 | tee work/spike-run.log
+          echo "run exit=${PIPESTATUS[0]}"
+          echo "=== first failure ==="
+          grep -nE 'Exception|Error|at (net|org|com)\.|Caused by' work/spike-run.log | head -40 || true
+
       - name: Summarise failure classes
         if: always()
         run: |
@@ -95,6 +116,7 @@ jobs:
           name: spike-mc-aot-log
           path: |
             work/spike.log
+            work/spike-run.log
             work/phantom-classes.txt
-            work/mc-aot-spike
+            work/spike-out/mc-aot-spike
           if-no-files-found: warn
