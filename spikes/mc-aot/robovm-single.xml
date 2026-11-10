@@ -12,5 +12,7 @@
         <pattern>net.kdt.pojavlaunch.Tools</pattern>
         <pattern>net.kdt.pojavlaunch.JMinecraftVersionList*</pattern>
         <pattern>net.kdt.pojavlaunch.value.**</pattern>
+        <pattern>net.kdt.pojavlaunch.uikit.**</pattern>
+        <pattern>org.lwjgl.glfw.**</pattern>
     </forceLinkClasses>
 </config>
